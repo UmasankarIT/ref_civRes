@@ -72,6 +72,9 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   // even when the reverse-geocode resolves after the position callback.
   const detailsRef = useRef<LocationDetails | null>(null);
   const lastPosRef = useRef({ lat: DEFAULT_LAT, lng: DEFAULT_LNG, acc: 10, onSite: true });
+  // Once the citizen picks a location themselves (typed search or manual coords),
+  // that choice is FINAL — a late GPS callback must never override it.
+  const manualOverrideRef = useRef<boolean>(false);
 
   const emitLocation = useCallback(
     (details?: LocationDetails | null) => {
@@ -147,10 +150,19 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude, accuracy: acc } = pos.coords;
+        // Always keep the device position for on-site distance checks...
         setDeviceCoords({ lat: latitude, lng: longitude });
+        setLoading(false);
+        setErrorStatus(null);
+
+        // ...but if the citizen already picked a location themselves, their
+        // manual choice is FINAL — never stomp it with the GPS fix.
+        if (manualOverrideRef.current) {
+          return;
+        }
+
         updatePin(latitude, longitude, acc, true);
         setIsManualOverride(false);
-        setLoading(false);
 
         // Emit immediately with whatever admin details are known, then refresh them
         emitLocation(detailsRef.current);
@@ -158,6 +170,11 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       },
       (err) => {
         setLoading(false);
+        // Keep their manually chosen location untouched if GPS fails late
+        if (manualOverrideRef.current) {
+          setErrorStatus('GPS unavailable — using your manually chosen location.');
+          return;
+        }
         switch (err.code) {
           case err.PERMISSION_DENIED:
             setErrorStatus('Location permission denied. Switched to manual pinpointing.');
@@ -183,6 +200,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   }, [emitLocation, updatePin]);
 
   useEffect(() => {
+    manualOverrideRef.current = false;
     if (initialLocation) {
       // App already fetched + granted location at startup — reuse it (no second prompt)
       updatePin(
@@ -244,6 +262,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 
   // Apply a searched place: move the pin there and treat it as a remote report
   const applySearchedPlace = (hit: GeocodeHit) => {
+    manualOverrideRef.current = true;
     setIsManualOverride(true);
     setSearchQuery(hit.label);
     setShowResults(false);
@@ -259,6 +278,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   };
 
   const handleManualCoordChange = (newLat: number, newLng: number) => {
+    manualOverrideRef.current = true;
     setIsManualOverride(true);
 
     let verifiedOnSite = false;
@@ -277,6 +297,13 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 
     // Refresh administrative details for the manually chosen pin
     fetchLocationDetails(newLat, newLng);
+  };
+
+  // A deliberate tap on "Re-acquire" overrides the manual lock (citizen wants GPS back)
+  const handleReAcquire = () => {
+    manualOverrideRef.current = false;
+    setErrorStatus(null);
+    acquireGPS();
   };
 
   return (
@@ -298,7 +325,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 
         <button
           type="button"
-          onClick={acquireGPS}
+          onClick={handleReAcquire}
           disabled={loading}
           className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition disabled:opacity-50
                      bg-white border-slate-200 text-slate-700 hover:bg-slate-100 
