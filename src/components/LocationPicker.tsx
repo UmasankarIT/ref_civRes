@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   MapPin, 
   Navigation, 
@@ -8,37 +8,116 @@ import {
   CheckCircle2, 
   RefreshCw, 
   SlidersHorizontal,
-  Compass
+  Compass,
+  Building2,
+  Loader2
 } from 'lucide-react';
 import { calculateGeodesicDistanceMeters } from '@/lib/spatial';
+import { LocationDetails } from '@/lib/types';
+import { SupportedLanguage, TRANSLATIONS } from '@/lib/languages';
+
+// Neutral default (geographic centre of India) — actual coordinate is auto-fetched via GPS
+const DEFAULT_LAT = 20.5937;
+const DEFAULT_LNG = 78.9629;
 
 export interface LocationData {
   latitude: number;
   longitude: number;
   accuracyMeters: number;
   isOnSite: boolean;
+  locationDetails?: LocationDetails;
 }
 
 interface LocationPickerProps {
   onLocationResolved: (data: LocationData) => void;
   onSiteThresholdMeters?: number;
+  lang?: SupportedLanguage;
 }
 
 export const LocationPicker: React.FC<LocationPickerProps> = ({
   onLocationResolved,
   onSiteThresholdMeters = 80,
+  lang = 'en',
 }) => {
+  const t = TRANSLATIONS[lang];
+
   const [deviceCoords, setDeviceCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [selectedLat, setSelectedLat] = useState<number>(12.9716);
-  const [selectedLng, setSelectedLng] = useState<number>(77.5946);
+  const [selectedLat, setSelectedLat] = useState<number>(DEFAULT_LAT);
+  const [selectedLng, setSelectedLng] = useState<number>(DEFAULT_LNG);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
   const [isManualOverride, setIsManualOverride] = useState<boolean>(false);
   const [isOnSite, setIsOnSite] = useState<boolean>(true);
 
+  // Reverse-geocoded administrative details (state / district / mandal / pincode)
+  const [locationDetails, setLocationDetails] = useState<LocationDetails | null>(null);
+  const [locLoading, setLocLoading] = useState<boolean>(false);
+  const [locError, setLocError] = useState<boolean>(false);
+
+  // Refs let us always emit the freshest pin + admin details to the parent,
+  // even when the reverse-geocode resolves after the position callback.
+  const detailsRef = useRef<LocationDetails | null>(null);
+  const lastPosRef = useRef({ lat: DEFAULT_LAT, lng: DEFAULT_LNG, acc: 10, onSite: true });
+
+  const emitLocation = useCallback(
+    (details?: LocationDetails | null) => {
+      const pos = lastPosRef.current;
+      onLocationResolved({
+        latitude: pos.lat,
+        longitude: pos.lng,
+        accuracyMeters: pos.acc,
+        isOnSite: pos.onSite,
+        locationDetails: (details !== undefined ? details : detailsRef.current) ?? undefined,
+      });
+    },
+    [onLocationResolved]
+  );
+
+  const fetchLocationDetails = useCallback(
+    async (lat: number, lng: number) => {
+      setLocLoading(true);
+      setLocError(false);
+      try {
+        const res = await fetch(`/api/reverse-geocode?lat=${lat}&lon=${lng}`);
+        if (!res.ok) throw new Error(`Geocode failed: ${res.status}`);
+        const data = (await res.json()) as LocationDetails & { error?: string };
+        if (data.error) throw new Error(data.error);
+        detailsRef.current = {
+          state: data.state || undefined,
+          district: data.district || undefined,
+          mandal: data.mandal || undefined,
+          pincode: data.pincode || undefined,
+        };
+        setLocationDetails(detailsRef.current);
+        // Re-emit so the report form receives the freshly resolved details
+        emitLocation(detailsRef.current);
+      } catch (err) {
+        console.error('[LocationPicker] Reverse geocode failed:', err);
+        detailsRef.current = null;
+        setLocationDetails(null);
+        setLocError(true);
+        emitLocation(null);
+      } finally {
+        setLocLoading(false);
+      }
+    },
+    [emitLocation]
+  );
+
+  const updatePin = useCallback(
+    (lat: number, lng: number, acc: number, onSite: boolean) => {
+      lastPosRef.current = { lat, lng, acc, onSite };
+      setSelectedLat(lat);
+      setSelectedLng(lng);
+      setAccuracy(acc);
+      setIsOnSite(onSite);
+    },
+    []
+  );
+
   const acquireGPS = useCallback(() => {
-    if (!navigator.geolocation) {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setErrorStatus('Geolocation is not supported by your browser.');
       return;
     }
@@ -56,19 +135,13 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       (pos) => {
         const { latitude, longitude, accuracy: acc } = pos.coords;
         setDeviceCoords({ lat: latitude, lng: longitude });
-        setSelectedLat(latitude);
-        setSelectedLng(longitude);
-        setAccuracy(acc);
-        setIsOnSite(true);
+        updatePin(latitude, longitude, acc, true);
         setIsManualOverride(false);
         setLoading(false);
 
-        onLocationResolved({
-          latitude,
-          longitude,
-          accuracyMeters: acc,
-          isOnSite: true,
-        });
+        // Emit immediately with whatever admin details are known, then refresh them
+        emitLocation(detailsRef.current);
+        fetchLocationDetails(latitude, longitude);
       },
       (err) => {
         setLoading(false);
@@ -76,7 +149,6 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           case err.PERMISSION_DENIED:
             setErrorStatus('Location permission denied. Switched to manual pinpointing.');
             setIsManualOverride(true);
-            setIsOnSite(false);
             break;
           case err.POSITION_UNAVAILABLE:
             setErrorStatus('GPS satellite lock unavailable. Please adjust manually.');
@@ -89,16 +161,13 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
             setErrorStatus('Unable to acquire high-accuracy coordinates.');
         }
 
-        onLocationResolved({
-          latitude: selectedLat,
-          longitude: selectedLng,
-          accuracyMeters: 50,
-          isOnSite: false,
-        });
+        updatePin(selectedLat, selectedLng, 50, false);
+        emitLocation(detailsRef.current);
       },
       geoOptions
     );
-  }, [onLocationResolved, selectedLat, selectedLng]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emitLocation, updatePin]);
 
   useEffect(() => {
     acquireGPS();
@@ -106,8 +175,6 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   }, []);
 
   const handleManualCoordChange = (newLat: number, newLng: number) => {
-    setSelectedLat(newLat);
-    setSelectedLng(newLng);
     setIsManualOverride(true);
 
     let verifiedOnSite = false;
@@ -121,13 +188,11 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       verifiedOnSite = distance <= onSiteThresholdMeters;
     }
 
-    setIsOnSite(verifiedOnSite);
-    onLocationResolved({
-      latitude: newLat,
-      longitude: newLng,
-      accuracyMeters: accuracy || 50,
-      isOnSite: verifiedOnSite,
-    });
+    updatePin(newLat, newLng, accuracy || 50, verifiedOnSite);
+    emitLocation(detailsRef.current);
+
+    // Refresh administrative details for the manually chosen pin
+    fetchLocationDetails(newLat, newLng);
   };
 
   return (
@@ -142,7 +207,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
             <Compass className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold">Geolocation Verification</h4>
+            <h4 className="text-xs sm:text-sm font-bold">{t.geoTitle}</h4>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">Locking exact incident coordinates</p>
           </div>
         </div>
@@ -167,7 +232,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         </div>
       )}
 
-      {/* Status Badges with Roomy Layout */}
+      {/* Status Badges */}
       <div className="grid grid-cols-2 gap-3">
         <div className="p-3.5 rounded-2xl border transition-colors
                         bg-white border-slate-200/80 
@@ -198,13 +263,56 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         </div>
       </div>
 
+      {/* Fetched Administrative Details: State / District / Mandal / PIN Code */}
+      <div className="p-4 rounded-2xl border transition-colors space-y-3
+                      bg-white border-slate-200/80 
+                      dark:bg-slate-900/60 dark:border-slate-800/80">
+        <div className="flex items-center space-x-2">
+          <div className="p-1.5 rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-400">
+            <Building2 className="w-3.5 h-3.5" />
+          </div>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider">
+            {t.locDetails}
+          </span>
+          {locLoading && <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-500 ml-auto" />}
+        </div>
+
+        {locLoading && !locationDetails ? (
+          <p className="text-xs text-slate-500 dark:text-slate-400 flex items-center space-x-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <span>{t.loadingLoc}</span>
+          </p>
+        ) : locError && !locationDetails ? (
+          <p className="text-xs text-amber-600 dark:text-amber-400">{t.locUnavailable}</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-2.5 text-xs">
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-950 dark:border-slate-800">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">{t.state}</span>
+              <strong className="text-slate-800 dark:text-slate-100 block truncate">{locationDetails?.state || '—'}</strong>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-950 dark:border-slate-800">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">{t.district}</span>
+              <strong className="text-slate-800 dark:text-slate-100 block truncate">{locationDetails?.district || '—'}</strong>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-950 dark:border-slate-800">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">{t.mandal}</span>
+              <strong className="text-slate-800 dark:text-slate-100 block truncate">{locationDetails?.mandal || '—'}</strong>
+            </div>
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-100 dark:bg-slate-950 dark:border-slate-800">
+              <span className="text-[10px] text-slate-400 dark:text-slate-500 block">{t.pincode}</span>
+              <strong className="text-slate-800 dark:text-slate-100 block truncate">{locationDetails?.pincode || '—'}</strong>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Lat/Lng display and manual override toggle */}
       <div className="p-3 rounded-2xl border font-mono text-xs flex items-center justify-between transition-colors
                       bg-white border-slate-200 text-slate-700 
                       dark:bg-slate-900 dark:border-slate-800 dark:text-slate-300">
         <div className="flex items-center space-x-3">
-          <span>LAT: <strong className="text-emerald-600 dark:text-emerald-400">{selectedLat.toFixed(5)}</strong></span>
-          <span>LNG: <strong className="text-emerald-600 dark:text-emerald-400">{selectedLng.toFixed(5)}</strong></span>
+          <span>{t.latLabel}: <strong className="text-emerald-600 dark:text-emerald-400">{selectedLat.toFixed(5)}</strong></span>
+          <span>{t.lngLabel}: <strong className="text-emerald-600 dark:text-emerald-400">{selectedLng.toFixed(5)}</strong></span>
         </div>
         <button
           type="button"
@@ -226,7 +334,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
           </p>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Latitude</label>
+              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">{t.latLabel}</label>
               <input
                 type="number"
                 step="0.0001"
@@ -236,7 +344,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
               />
             </div>
             <div>
-              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">Longitude</label>
+              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">{t.lngLabel}</label>
               <input
                 type="number"
                 step="0.0001"
@@ -245,6 +353,10 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
                 className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-emerald-500"
               />
             </div>
+          </div>
+          <div className="flex items-start space-x-2 text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+            <MapPin className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+            <span>State / district / mandal / pincode refresh automatically when the pin moves.</span>
           </div>
         </div>
       )}

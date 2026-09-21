@@ -40,6 +40,13 @@ export interface ExifMetadata {
   deviceModel?: string;
 }
 
+export interface LocationDetails {
+  state?: string;
+  district?: string;
+  mandal?: string;
+  pincode?: string;
+}
+
 export interface IssueReport {
   id: string;
   issueId: string;
@@ -52,6 +59,7 @@ export interface IssueReport {
   imageUrl: string;
   citizenNotes?: string;
   exif?: ExifMetadata;
+  locationDetails?: LocationDetails;
   createdAt: string;
 }
 
@@ -65,6 +73,7 @@ export interface Issue {
   longitude: number;
   formattedAddress: string;
   wardId?: string;
+  locationDetails?: LocationDetails;
   status: IssueStatus;
   assignedWorkerName?: string;
   assignedDepartment?: string;
@@ -92,6 +101,7 @@ export interface CreateReportRequest {
   title?: string;
   citizenNotes?: string;
   exif?: ExifMetadata;
+  locationDetails?: LocationDetails;
 }
 
 export interface SubmissionResponse {

@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
         imageUrl: body.imageUrl,
         citizenNotes: body.citizenNotes,
         exif,
+        locationDetails: body.locationDetails,
         createdAt: new Date().toISOString(),
       };
 
@@ -108,6 +109,7 @@ export async function POST(req: NextRequest) {
       imageUrl: body.imageUrl,
       citizenNotes: body.citizenNotes,
       exif,
+      locationDetails: body.locationDetails,
       createdAt: new Date().toISOString(),
     };
 
@@ -120,6 +122,7 @@ export async function POST(req: NextRequest) {
       latitude: body.latitude,
       longitude: body.longitude,
       formattedAddress: generateMockAddress(body.latitude, body.longitude),
+      locationDetails: body.locationDetails,
       status: 'reported',
       reportCount: 1,
       communityUpvotes: 0,

@@ -17,8 +17,26 @@ import {
   Loader2,
   Info
 } from 'lucide-react';
-import { CATEGORIES } from '@/lib/store';
+import { INITIAL_CATEGORIES } from '@/lib/store';
 import { CategorySlug, CivicIssue } from '@/types/civic';
+
+// Legacy slug-based form schema adapted from the unified category registry
+const LEGACY_SLUG_MAP: Record<string, CategorySlug> = {
+  ROAD_POTHOLE: 'pothole',
+  DRAINAGE_OVERFLOW: 'broken_drainage',
+  GARBAGE_DUMP: 'garbage',
+  STREETLIGHT_OUTAGE: 'street_light',
+  WATER_SUPPLY_BURST: 'water_pipeline',
+  OTHERS: 'road_damage',
+};
+
+const CATEGORIES = INITIAL_CATEGORIES.map((c) => ({
+  slug: LEGACY_SLUG_MAP[c.code] ?? 'pothole',
+  name: c.name,
+  description: c.description,
+  iconName: c.iconName,
+  slaHours: c.defaultSlaHours,
+}));
 import { SupportedLanguage, SUPPORTED_LANGUAGES, TRANSLATIONS } from '@/lib/languages';
 
 interface IssueReportFormProps {
@@ -45,7 +63,7 @@ export const IssueReportForm: React.FC<IssueReportFormProps> = ({
   const recognitionRef = useRef<any>(null);
 
   // Location states
-  const [coords, setCoords] = useState<{ lat: number; lng: number }>({ lat: 12.9716, lng: 77.5946 });
+  const [coords, setCoords] = useState<{ lat: number; lng: number }>({ lat: 20.5937, lng: 78.9629 });
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [isOnSite, setIsOnSite] = useState<boolean>(true);
   const [isLocating, setIsLocating] = useState<boolean>(false);

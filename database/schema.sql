@@ -299,5 +299,6 @@ VALUES
     ('sewage', 'Sewage Overflow & Leakage', 'Contaminated sewage water spilling onto streets or public pathways', 1.40, 24, 'biohazard'),
     ('garbage', 'Illegal Garbage Dumping', 'Accumulation of municipal solid waste or overflowed dumpsters', 1.00, 36, 'trash-2'),
     ('street_light', 'Broken Streetlight & Electrical Hazards', 'Non-functional streetlights or exposed electrical cables', 1.10, 72, 'lightbulb-off'),
-    ('road_damage', 'Cave-in & Structural Road Hazard', 'Major structural road collapse, landslide obstruction', 1.60, 12, 'shield-x')
+    ('road_damage', 'Cave-in & Structural Road Hazard', 'Major structural road collapse, landslide obstruction', 1.60, 12, 'shield-x'),
+    ('others', 'Other Civic Infrastructure Issue', 'Any other civic infrastructure concern not covered by the categories above', 1.00, 72, 'help-circle')
 ON CONFLICT (slug) DO NOTHING;

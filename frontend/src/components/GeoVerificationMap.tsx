@@ -29,7 +29,7 @@ interface GeoVerificationMapProps {
 
 export const GeoVerificationMap: React.FC<GeoVerificationMapProps> = ({
   onLocationChange,
-  defaultCenter = [12.9716, 77.5946] // Default city center coordinates
+  defaultCenter = [20.5937, 78.9629] // Default India-centre coordinate override
 }) => {
   const [coords, setCoords] = useState<{ lat: number; lng: number }>({
     lat: defaultCenter[0],

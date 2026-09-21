@@ -11,6 +11,9 @@ import {
   ArrowRight
 } from 'lucide-react';
 
+// Default map focus: geographic centre of India (actual position is auto-fetched via GPS)
+const DEFAULT_CENTER: [number, number] = [20.5937, 78.9629];
+
 interface CivicMapProps {
   issues: Issue[];
   categories: Category[];
@@ -57,7 +60,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
           : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
         const map = L.map(mapContainerRef.current, {
-          center: [12.9716, 77.5946],
+          center: DEFAULT_CENTER,
           zoom: 14,
           zoomControl: false,
         });
@@ -87,7 +90,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
           iconAnchor: [16, 16],
         });
 
-        L.marker([12.9716, 77.5946], { icon: userIcon })
+        L.marker(DEFAULT_CENTER, { icon: userIcon })
           .addTo(map)
           .bindTooltip('Your Verified Location', { direction: 'top', offset: [0, -10] });
 
@@ -191,7 +194,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
 
   const recenterGPS = () => {
     if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo([12.9716, 77.5946], 15, { duration: 1 });
+      mapInstanceRef.current.flyTo(DEFAULT_CENTER, 15, { duration: 1 });
     }
   };
 

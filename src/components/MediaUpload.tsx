@@ -5,7 +5,6 @@ import exifr from 'exifr';
 import { 
   Camera, 
   UploadCloud, 
-  Sparkles,
   FileCheck,
   Loader2
 } from 'lucide-react';
@@ -17,24 +16,6 @@ interface MediaUploadProps {
   reportedLongitude: number;
   onImageReady: (data: { imageUrl: string; exif: ExifMetadata }) => void;
 }
-
-const SAMPLE_CIVIC_PHOTOS = [
-  {
-    name: 'Pothole',
-    url: 'https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?auto=format&fit=crop&w=800&q=80',
-    gps: { lat: 12.9716, lng: 77.5946 },
-  },
-  {
-    name: 'Sewage Leak',
-    url: 'https://images.unsplash.com/photo-1541888946425-d0fbb186f5f7?auto=format&fit=crop&w=800&q=80',
-    gps: { lat: 12.9742, lng: 77.5982 },
-  },
-  {
-    name: 'Garbage Dump',
-    url: 'https://images.unsplash.com/photo-1605600659908-0ef719419d41?auto=format&fit=crop&w=800&q=80',
-    gps: { lat: 12.9685, lng: 77.5912 },
-  },
-];
 
 export const MediaUpload: React.FC<MediaUploadProps> = ({
   reportedLatitude,
@@ -153,34 +134,6 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
     }
   };
 
-  const selectSamplePhoto = (sample: typeof SAMPLE_CIVIC_PHOTOS[0]) => {
-    setPreviewUrl(sample.url);
-    const delta = calculateGeodesicDistanceMeters(
-      reportedLatitude,
-      reportedLongitude,
-      sample.gps.lat,
-      sample.gps.lng
-    );
-
-    const exif: ExifMetadata = {
-      hasGps: true,
-      exifLatitude: sample.gps.lat,
-      exifLongitude: sample.gps.lng,
-      deltaMeters: Math.round(delta * 10) / 10,
-      isSpoofed: delta > 300,
-      capturedAt: new Date().toISOString(),
-      deviceMake: 'CivicResolve Camera Module',
-      deviceModel: 'High-Res Optical Sensor',
-    };
-
-    setExifInfo(exif);
-    setCompressionRatio('Simulated WebP Compressed');
-    onImageReady({
-      imageUrl: sample.url,
-      exif,
-    });
-  };
-
   return (
     <div className="p-5 rounded-3xl border transition-colors space-y-4
                     bg-slate-50 border-slate-200 text-slate-800 
@@ -257,30 +210,6 @@ export const MediaUpload: React.FC<MediaUploadProps> = ({
             </div>
           )}
         </button>
-      )}
-
-      {/* Preset sample buttons with clean styling */}
-      {!previewUrl && (
-        <div className="pt-1">
-          <div className="flex items-center space-x-1.5 text-xs text-slate-500 dark:text-slate-400 mb-2">
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>Or test with verified sample photos:</span>
-          </div>
-          <div className="grid grid-cols-3 gap-2.5">
-            {SAMPLE_CIVIC_PHOTOS.map((sample, idx) => (
-              <button
-                key={idx}
-                type="button"
-                onClick={() => selectSamplePhoto(sample)}
-                className="px-3 py-2 rounded-xl text-xs font-medium border transition text-center truncate
-                           bg-white hover:bg-slate-50 border-slate-200 text-slate-700
-                           dark:bg-slate-900/80 dark:hover:bg-slate-800 dark:border-slate-800 dark:text-slate-300"
-              >
-                {sample.name}
-              </button>
-            ))}
-          </div>
-        </div>
       )}
 
       {/* EXIF Metadata Audit Box */}

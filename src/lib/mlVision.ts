@@ -38,6 +38,12 @@ const VISION_CATEGORY_MAP: Record<string, VisionRule> = {
     baseSeverity: 4.6,
     hazards: ['potable_water_wastage', 'foundation_erosion', 'subsurface_cavity'],
   },
+  OTHERS: {
+    keywords: ['other', 'miscellaneous', 'misc', 'general', 'various'],
+    category: 'OTHERS',
+    baseSeverity: 2.5,
+    hazards: ['general_civic_concern', 'requires_department_review'],
+  },
 };
 
 /**
