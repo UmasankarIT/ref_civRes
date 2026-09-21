@@ -1,0 +1,21 @@
+{
+  "name": "CivicResolve",
+  "short_name": "CivicResolve",
+  "description": "AI-Powered Community Infrastructure Issue Reporting",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0066cc",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1042/1042339.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/1042/1042339.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
