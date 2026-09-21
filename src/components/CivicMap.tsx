@@ -52,6 +52,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const tileLayerRef = useRef<any>(null);
+  const resizeObserverRef = useRef<ResizeObserver | null>(null);
   const markersRef = useRef<{ [key: string]: any }>({});
   const userMarkerRef = useRef<any>(null);
   const userCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -173,6 +174,22 @@ export const CivicMap: React.FC<CivicMapProps> = ({
 
         mapInstanceRef.current = map;
 
+        // Some engines hand Leaflet a stale container size (e.g. 0px) at mount
+        // inside flex/viewport layouts; re-measure once the frame paints so the
+        // tiles always render, and keep the map synced if the container resizes
+        // (banner collapse after sign-in, viewport changes, rotation, etc.).
+        window.requestAnimationFrame(() => {
+          if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+        });
+
+        if (typeof ResizeObserver !== 'undefined' && mapContainerRef.current) {
+          const ro = new ResizeObserver(() => {
+            if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+          });
+          ro.observe(mapContainerRef.current);
+          resizeObserverRef.current = ro;
+        }
+
         // The app-level locator (page.tsx) owns the first-open permission prompt;
         // the map centres itself on the resulting fix via the initialLocation effect below.
       }
@@ -193,6 +210,10 @@ export const CivicMap: React.FC<CivicMapProps> = ({
     return () => {
       isMounted = false;
       window.removeEventListener('themeChanged', handleThemeChange);
+      if (resizeObserverRef.current) {
+        resizeObserverRef.current.disconnect();
+        resizeObserverRef.current = null;
+      }
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -374,7 +395,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   };
 
   return (
-    <div className="relative w-full flex-1 min-h-0 flex flex-col overflow-hidden transition-colors
+    <div className="relative w-full h-[calc(100dvh-4rem-4.5rem)] md:h-[calc(100vh-5rem)] flex flex-col overflow-hidden transition-colors
                     bg-slate-100 dark:bg-slate-950">
       
       {/* Floating Filter Chips with Ample Breathing Room */}

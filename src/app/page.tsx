@@ -313,7 +313,7 @@ export default function HomePage() {
       )}
 
       {/* Main Viewport Container */}
-      <div className={`flex-1 flex flex-col relative ${activeTab === 'map' ? 'pb-[4.5rem] md:pb-0' : ''}`}>
+      <div className="flex-1 flex flex-col relative">
         {activeTab === 'map' && (
           <CivicMap
             issues={filteredMapIssues}
