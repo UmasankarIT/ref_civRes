@@ -67,8 +67,17 @@ export function unauthorized(message = 'Authentication required.') {
 // Simulated OTP (passwordless citizen sign-in). Real SMS/WhatsApp needs a
 // provider key; the demo generates the OTP in-memory and returns it so the
 // flow can be completed instantly.
+//
+// Routes are bundled separately by Next.js (dev + prod), so module-level state
+// lives on globalThis — same pattern as the civic store — or OTPs would be
+// invisible to the verify route.
 // ---------------------------------------------------------------------------
-const otpStore = new Map<string, { otp: string; expiresAt: number }>();
+const globalForOtp = globalThis as unknown as {
+  __civresOtpStore?: Map<string, { otp: string; expiresAt: number }>;
+};
+const otpStore: Map<string, { otp: string; expiresAt: number }> =
+  globalForOtp.__civresOtpStore || new Map();
+if (process.env.NODE_ENV !== 'production') globalForOtp.__civresOtpStore = otpStore;
 
 export function issueOtp(phone: string): string {
   const otp = String(Math.floor(100000 + Math.random() * 900000));

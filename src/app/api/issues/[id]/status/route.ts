@@ -63,7 +63,6 @@ export async function PATCH(
       assignedWorkerName,
       assignedDepartment,
       departmentId: departmentId || (isRole(user, 'department') ? user.departmentId : undefined),
-      jurisdictionCode: user.jurisdictionCode,
       resolutionNotes,
       resolutionProofUrl,
     });

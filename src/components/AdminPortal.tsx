@@ -1,17 +1,26 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Issue, IssueStatus, Category } from '@/lib/types';
-import { 
-  Building2, 
-  Clock, 
-  CheckCircle, 
-  Search, 
-  FileCheck2, 
-  MapPin
+import React, { useCallback, useEffect, useState } from 'react';
+import { Issue, IssueStatus, Category, Department, AuthUser } from '@/lib/types';
+import { StatusPill } from './StatusPill';
+import {
+  Search,
+  CheckCircle2,
+  XCircle,
+  Send,
+  GitMerge,
+  Plus,
+  Building2,
+  BarChart3,
+  Clock,
+  AlertTriangle,
+  Mic,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react';
 
 interface AdminPortalProps {
+  user: AuthUser;
   issues: Issue[];
   categories: Category[];
   onStatusUpdate: (
@@ -19,482 +28,644 @@ interface AdminPortalProps {
     params: {
       status: IssueStatus;
       assignedWorkerName?: string;
-      resolutionNotes?: string;
-      resolutionProofUrl?: string;
+      assignedDepartment?: string;
+      departmentId?: string;
     }
   ) => Promise<void>;
+  onMerge: (secondaryId: string, primaryId: string) => Promise<void>;
 }
 
-const MUNICIPAL_FIELD_WORKERS = [
-  'Rajesh Kumar (Roads Squad 4)',
-  'Anil Sharma (Sanitation Wing)',
-  'Suresh Babu (Electric Cell)',
-  'Priya Nair (Stormwater Ops)',
-  'Vikas Gowda (Water Line Repair)',
+type Section = 'triage' | 'dispatch' | 'departments' | 'analytics';
+
+const SECTIONS: { key: Section; label: string; icon: React.ReactNode }[] = [
+  { key: 'triage', label: 'Triage', icon: <Search className="w-4 h-4" /> },
+  { key: 'dispatch', label: 'Dispatch', icon: <Send className="w-4 h-4" /> },
+  { key: 'departments', label: 'Departments', icon: <Building2 className="w-4 h-4" /> },
+  { key: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
 ];
 
-export const AdminPortal: React.FC<AdminPortalProps> = ({
-  issues,
-  categories,
-  onStatusUpdate,
-}) => {
-  const [selectedDept, setSelectedDept] = useState<string>('all');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [resolvingIssue, setResolvingIssue] = useState<Issue | null>(null);
-  const [resolutionProofUrl, setResolutionProofUrl] = useState<string>('');
-  const [resolutionNotes, setResolutionNotes] = useState<string>('');
-  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+const DEPT_WORKERS: Record<string, string[]> = {
+  DEPT_WATER: ['Vikas Gowda', 'Reena Jose', 'Mohan Lal'],
+  DEPT_DRAINAGE: ['Priya Nair', 'Suresh Kumar'],
+  DEPT_PWD: ['Rajesh Kumar', 'Anil Sharma', 'Dinesh Verma'],
+  DEPT_WASTE: ['Karthik Rao', 'Sundar Raj'],
+  DEPT_ELECTRICITY: ['Suresh Babu', 'Divya Menon'],
+  DEPT_HEALTH: ['Arjun Pillai'],
+  DEPT_TOWN_PLANNING: ['Geetha Reddy'],
+  DEPT_UNASSIGNED: ['Triage Officer'],
+};
 
-  const filteredIssues = issues.filter((iss) => {
-    if (selectedDept !== 'all' && !iss.category.responsibleDepartment.toLowerCase().includes(selectedDept.toLowerCase())) {
-      return false;
-    }
-    if (selectedStatus !== 'all' && iss.status !== selectedStatus) {
-      return false;
-    }
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      return (
-        iss.title.toLowerCase().includes(q) ||
-        iss.formattedAddress.toLowerCase().includes(q) ||
-        iss.category.name.toLowerCase().includes(q)
-      );
-    }
-    return true;
-  });
+type AnalyticsData = {
+  generatedAt: string;
+  totals: Record<string, number>;
+  byStatus: Record<string, number>;
+  byCategory: Record<string, number>;
+  byDepartment: Record<string, { name: string; open: number; avgHours: number; slaBreaches: number; resolved: number }>;
+  slaBreachedIssues: { id: string; title: string; departmentId?: string; status: IssueStatus; slaDeadlineAt?: string }[];
+  recentAudit: { id: string; actorName: string; role: string; action: string; detail: string; createdAt: string }[];
+};
 
-  const handleWorkerAssign = async (issueId: string, workerName: string) => {
-    setIsUpdating(true);
+export const AdminPortal: React.FC<AdminPortalProps> = ({ user, issues, categories, onStatusUpdate, onMerge }) => {
+  const [section, setSection] = useState<Section>('triage');
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadDepartments = useCallback(async () => {
     try {
-      await onStatusUpdate(issueId, {
-        status: 'assigned',
-        assignedWorkerName: workerName,
-      });
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleStatusChange = async (issueId: string, newStatus: IssueStatus) => {
-    if (newStatus === 'resolved') {
-      const target = issues.find((i) => i.id === issueId);
-      if (target) {
-        setResolvingIssue(target);
-        return;
+      const res = await fetch('/api/admin/departments', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setDepartments(data.departments || []);
       }
+    } catch {
+      // ignore
     }
+  }, []);
 
-    setIsUpdating(true);
+  const loadAnalytics = useCallback(async () => {
+    setLoading(true);
     try {
-      await onStatusUpdate(issueId, { status: newStatus });
+      const res = await fetch('/api/admin/analytics', { cache: 'no-store' });
+      if (res.ok) setAnalytics(await res.json());
+    } catch {
+      // ignore
     } finally {
-      setIsUpdating(false);
+      setLoading(false);
     }
-  };
+  }, []);
 
-  const submitResolution = async () => {
-    if (!resolvingIssue) return;
-    setIsUpdating(true);
+  useEffect(() => {
+    loadDepartments();
+  }, [loadDepartments]);
 
+  useEffect(() => {
+    if (section === 'departments') loadDepartments();
+    if (section === 'analytics') loadAnalytics();
+  }, [section, loadDepartments, loadAnalytics]);
+
+  const activeIssues = issues.filter((i) => i.status !== 'merged');
+
+  return (
+    <div className="max-w-5xl mx-auto px-4 sm:px-8 py-6 pb-28 md:pb-12 space-y-5">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold tracking-tight">City Admin Console</h2>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Verified as {user.name} · full platform control — verify, dispatch, merge, govern departments.
+          </p>
+        </div>
+        <button
+          onClick={() => (section === 'analytics' ? loadAnalytics() : section === 'departments' ? loadDepartments() : undefined)}
+          className="flex items-center space-x-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <span>Refresh</span>
+        </button>
+      </div>
+
+      {/* Section tabs */}
+      <div className="grid grid-cols-4 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 text-xs font-bold">
+        {SECTIONS.map(({ key, label, icon }) => (
+          <button
+            key={key}
+            onClick={() => setSection(key)}
+            className={`py-2.5 rounded-xl flex items-center justify-center space-x-1.5 transition ${
+              section === key
+                ? 'bg-white text-emerald-700 shadow-sm dark:bg-emerald-600 dark:text-white'
+                : 'text-slate-500 hover:text-slate-800 dark:text-slate-400'
+            }`}
+          >
+            {icon}
+            <span className="hidden sm:inline">{label}</span>
+            <span className="sm:hidden">{label.slice(0, 6)}</span>
+          </button>
+        ))}
+      </div>
+
+      {section === 'triage' && (
+        <TriageSection issues={issues} onStatusUpdate={onStatusUpdate} />
+      )}
+      {section === 'dispatch' && (
+        <DispatchSection
+          issues={activeIssues}
+          departments={departments}
+          onStatusUpdate={onStatusUpdate}
+          onMerge={onMerge}
+        />
+      )}
+      {section === 'departments' && (
+        <DepartmentsSection departments={departments} onChanged={loadDepartments} />
+      )}
+      {section === 'analytics' && (
+        <AnalyticsSection analytics={analytics} issues={issues} />
+      )}
+    </div>
+  );
+};
+
+/* ------------------------------------------------------------------ */
+/* Triage — submitted/in-review issues: verify or reject               */
+/* ------------------------------------------------------------------ */
+
+function TriageSection({ issues, onStatusUpdate }: { issues: Issue[]; onStatusUpdate: AdminPortalProps['onStatusUpdate'] }) {
+  const triage = issues.filter((i) => i.status === 'reported' || i.status === 'in_review');
+  const [worker, setWorker] = useState('');
+
+  if (triage.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center">
+        <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-400" />
+        <p className="mt-3 text-sm font-semibold">Triage queue is empty</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          New submissions land here. Verify them and they become assignable to a department.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {triage.map((issue) => (
+        <IssueRow key={issue.id} issue={issue}>
+          <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+            <button
+              onClick={() => {
+                setWorker('');
+                onStatusUpdate(issue.id, { status: 'verified' });
+              }}
+              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center space-x-1.5"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>Verify</span>
+            </button>
+            <button
+              onClick={() => onStatusUpdate(issue.id, { status: 'rejected' })}
+              className="px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition flex items-center space-x-1.5"
+            >
+              <XCircle className="w-3.5 h-3.5" />
+              <span>Reject</span>
+            </button>
+            <span className="text-[10px] text-slate-400 ml-auto">{issue.id}</span>
+          </div>
+        </IssueRow>
+      ))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Dispatch — verify-assigned tickets: assign, unassign, merge, reject */
+/* ------------------------------------------------------------------ */
+
+function DispatchSection({
+  issues,
+  departments,
+  onStatusUpdate,
+  onMerge,
+}: {
+  issues: Issue[];
+  departments: Department[];
+  onStatusUpdate: AdminPortalProps['onStatusUpdate'];
+  onMerge: AdminPortalProps['onMerge'];
+}) {
+  const [assignDept, setAssignDept] = useState<Record<string, string>>({});
+  const [assignWorker, setAssignWorker] = useState<Record<string, string>>({});
+  const [mergeTarget, setMergeTarget] = useState<Record<string, string>>({});
+
+  const assignables = issues.filter((i) => i.status === 'verified' || i.status === 'assigned' || i.status === 'in_progress');
+
+  if (assignables.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center">
+        <Send className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
+        <p className="mt-3 text-sm font-semibold">Nothing to dispatch</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Verify submissions in Triage first.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {assignables.map((issue) => {
+        const deptOptions = departments.filter((d) => !d.disabled);
+        const chosenDept = assignDept[issue.id] || issue.departmentId || '';
+        const chosenWorker = assignWorker[issue.id] || issue.assignedWorkerName || '';
+        const workers = DEPT_WORKERS[chosenDept] || ['Field Crew'];
+
+        return (
+          <IssueRow key={issue.id} issue={issue}>
+            {/* Reassignment request banner */}
+            {issue.reassignRequest && (
+              <div className="pt-3">
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 dark:bg-amber-500/10 dark:border-amber-500/30 text-amber-800 dark:text-amber-300">
+                  <p className="text-[11px] font-bold">Reassignment requested by {issue.reassignRequest.byDepartment}</p>
+                  <p className="text-[11px] mt-0.5 italic">“{issue.reassignRequest.reason}”</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+              {(issue.status === 'verified' || issue.status === 'assigned') && (
+                <>
+                  <select
+                    value={chosenDept}
+                    onChange={(e) => setAssignDept((p) => ({ ...p, [issue.id]: e.target.value }))}
+                    className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold outline-none focus:border-emerald-500"
+                  >
+                    <option value="">Select department…</option>
+                    {deptOptions.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={chosenWorker}
+                    onChange={(e) => setAssignWorker((p) => ({ ...p, [issue.id]: e.target.value }))}
+                    className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold outline-none focus:border-emerald-500"
+                  >
+                    <option value="">Worker…</option>
+                    {workers.map((w) => (
+                      <option key={w} value={w}>
+                        {w}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      const dept = departments.find((d) => d.id === chosenDept);
+                      onStatusUpdate(issue.id, {
+                        status: 'assigned',
+                        departmentId: chosenDept,
+                        assignedDepartment: dept?.name || chosenDept,
+                        assignedWorkerName: chosenWorker || 'Field Crew',
+                      });
+                      setAssignDept((p) => ({ ...p, [issue.id]: '' }));
+                      setAssignWorker((p) => ({ ...p, [issue.id]: '' }));
+                    }}
+                    disabled={!chosenDept}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition disabled:opacity-40 flex items-center space-x-1.5"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Assign</span>
+                  </button>
+                  <button
+                    onClick={() => onStatusUpdate(issue.id, { status: 'verified' })}
+                    className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+                  >
+                    Unassign
+                  </button>
+                </>
+              )}
+
+              {/* Merge control */}
+              <select
+                value={mergeTarget[issue.id] || ''}
+                onChange={(e) => setMergeTarget((p) => ({ ...p, [issue.id]: e.target.value }))}
+                className="px-2.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-semibold outline-none focus:border-emerald-500"
+              >
+                <option value="">Merge into…</option>
+                {issues
+                  .filter((cand) => cand.id !== issue.id && cand.status !== 'merged' && cand.status !== 'rejected')
+                  .map((cand) => (
+                    <option key={cand.id} value={cand.id}>
+                      {cand.id} — {cand.title.slice(0, 28)}
+                    </option>
+                  ))}
+              </select>
+              <button
+                onClick={() => mergeTarget[issue.id] && onMerge(issue.id, mergeTarget[issue.id])}
+                disabled={!mergeTarget[issue.id]}
+                className="px-3 py-2 rounded-xl bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold transition disabled:opacity-40 flex items-center space-x-1.5"
+              >
+                <GitMerge className="w-3.5 h-3.5" />
+                <span>Merge</span>
+              </button>
+
+              <button
+                onClick={() => onStatusUpdate(issue.id, { status: 'rejected' })}
+                className="px-3 py-2 rounded-xl border border-rose-300 dark:border-rose-500/40 text-rose-600 dark:text-rose-400 text-xs font-bold hover:bg-rose-500/10 transition"
+              >
+                Reject
+              </button>
+            </div>
+          </IssueRow>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Departments — dynamic catalog CRUD                                   */
+/* ------------------------------------------------------------------ */
+
+function DepartmentsSection({ departments, onChanged }: { departments: Department[]; onChanged: () => void }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState('');
+  const [nodalOfficer, setNodalOfficer] = useState('');
+  const [slaHours, setSlaHours] = useState(72);
+  const [disabled, setDisabled] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    const id = editingId || `DEPT_${name.trim().replace(/[^A-Za-z0-9]/g, '_').toUpperCase().slice(0, 24)}`;
     try {
-      await onStatusUpdate(resolvingIssue.id, {
-        status: 'resolved',
-        resolutionNotes: resolutionNotes || 'Repairs completed and validated on-site by municipal crew.',
-        resolutionProofUrl: resolutionProofUrl || 'https://images.unsplash.com/photo-1584467735871-8e85353a8413?auto=format&fit=crop&w=800&q=80',
+      await fetch('/api/admin/departments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name: name.trim(), nodalOfficer, slaHours, disabled }),
       });
-      setResolvingIssue(null);
-      setResolutionProofUrl('');
-      setResolutionNotes('');
+      setEditingId(null);
+      setName('');
+      setNodalOfficer('');
+      setSlaHours(72);
+      setDisabled(false);
+      onChanged();
     } finally {
-      setIsUpdating(false);
+      setSaving(false);
     }
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-8 py-6 pb-32 md:pb-16 space-y-6 sm:space-y-8">
-      {/* Top Banner & KPI Overview with generous padding */}
-      <div className="p-6 sm:p-8 rounded-3xl border shadow-sm transition-colors space-y-6
-                      bg-white border-slate-200/90 text-slate-900 
-                      dark:bg-slate-900/90 dark:border-slate-800 dark:text-slate-100">
-        
-        <div className="flex items-center space-x-3.5">
-          <div className="p-2.5 rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-            <Building2 className="w-6 h-6" />
-          </div>
-          <div>
-            <h2 className="text-lg sm:text-2xl font-bold tracking-tight">
-              Municipal Resolution Dispatch
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              Priority-ranked queue based on computer vision severity, duplicate report density, and SLA decay.
-            </p>
-          </div>
-        </div>
-
-        {/* Clean KPI Cards */}
-        <div className="grid grid-cols-3 gap-3 sm:gap-6 pt-1">
-          <div className="p-4 sm:p-6 rounded-2xl border text-center transition-colors
-                          bg-slate-50 border-slate-200/80 
-                          dark:bg-slate-950 dark:border-slate-800">
-            <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 block font-bold uppercase tracking-wider">
-              Pending Queue
-            </span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-amber-600 dark:text-amber-400 font-mono mt-1 block">
-              {issues.filter((i) => i.status !== 'resolved').length}
-            </span>
-          </div>
-          
-          <div className="p-4 sm:p-6 rounded-2xl border text-center transition-colors
-                          bg-slate-50 border-slate-200/80 
-                          dark:bg-slate-950 dark:border-slate-800">
-            <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 block font-bold uppercase tracking-wider">
-              In Progress
-            </span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-sky-600 dark:text-sky-400 font-mono mt-1 block">
-              {issues.filter((i) => i.status === 'in_progress' || i.status === 'assigned').length}
-            </span>
-          </div>
-
-          <div className="p-4 sm:p-6 rounded-2xl border text-center transition-colors
-                          bg-slate-50 border-slate-200/80 
-                          dark:bg-slate-950 dark:border-slate-800">
-            <span className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 block font-bold uppercase tracking-wider">
-              Resolved
-            </span>
-            <span className="text-2xl sm:text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">
-              {issues.filter((i) => i.status === 'resolved').length}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Filter and Search Controls */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-4 rounded-2xl border transition-colors
-                      bg-white border-slate-200/90 
-                      dark:bg-slate-900/70 dark:border-slate-800/80">
-        
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+    <div className="space-y-4">
+      {/* Add / edit form */}
+      <div className="p-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-3">
+        <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+          {editingId ? `Editing ${editingId}` : 'Add a new department'}
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <input
-            type="text"
-            placeholder="Search road, hazard, or ward..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-xl text-xs transition-colors border
-                       bg-slate-50 border-slate-200 text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-500
-                       dark:bg-slate-950 dark:border-slate-800 dark:text-slate-200 dark:placeholder-slate-500"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Department name"
+            className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs outline-none focus:border-emerald-500"
           />
+          <input
+            value={nodalOfficer}
+            onChange={(e) => setNodalOfficer(e.target.value)}
+            placeholder="Nodal officer"
+            className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs outline-none focus:border-emerald-500"
+          />
+          <input
+            value={slaHours}
+            onChange={(e) => setSlaHours(Number(e.target.value) || 0)}
+            type="number"
+            min={1}
+            placeholder="SLA (hours)"
+            className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-xs outline-none focus:border-emerald-500"
+          />
+          <label className="flex items-center space-x-2 px-3 py-2.5 text-xs font-semibold text-slate-600 dark:text-slate-400">
+            <input type="checkbox" checked={disabled} onChange={(e) => setDisabled(e.target.checked)} />
+            <span>Disabled (stop receiving routes)</span>
+          </label>
         </div>
-
-        <div className="flex items-center space-x-3 w-full sm:w-auto">
-          <select
-            value={selectedDept}
-            onChange={(e) => setSelectedDept(e.target.value)}
-            className="w-1/2 sm:w-auto px-3.5 py-2.5 rounded-xl text-xs font-medium border
-                       bg-slate-50 border-slate-200 text-slate-700 focus:outline-none
-                       dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300"
+        <div className="flex space-x-2">
+          <button
+            onClick={save}
+            disabled={!name.trim() || saving}
+            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition disabled:opacity-40 flex items-center space-x-1.5"
           >
-            <option value="all">All Departments</option>
-            <option value="Roads">Roads (PWD)</option>
-            <option value="Water">Water Board</option>
-            <option value="Solid Waste">Solid Waste</option>
-            <option value="Electrical">Electrical Cell</option>
-          </select>
-
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="w-1/2 sm:w-auto px-3.5 py-2.5 rounded-xl text-xs font-medium border
-                       bg-slate-50 border-slate-200 text-slate-700 focus:outline-none
-                       dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300"
-          >
-            <option value="all">All Statuses</option>
-            <option value="reported">Reported</option>
-            <option value="assigned">Assigned</option>
-            <option value="in_progress">In Progress</option>
-            <option value="resolved">Resolved</option>
-          </select>
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+            <span>{editingId ? 'Save changes' : 'Create department'}</span>
+          </button>
+          {editingId && (
+            <button
+              onClick={() => {
+                setEditingId(null);
+                setName('');
+                setNodalOfficer('');
+                setSlaHours(72);
+                setDisabled(false);
+              }}
+              className="px-3 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-bold text-slate-500"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       </div>
 
-      {/* MOBILE VIEW: Roomy Card Stream (< md) */}
-      <div className="md:hidden space-y-4">
-        {filteredIssues.map((issue) => (
-          <div
-            key={issue.id}
-            className="p-5 rounded-3xl border shadow-sm space-y-4 transition-colors
-                       bg-white border-slate-200 text-slate-900 
-                       dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex space-x-3 items-center">
-                <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 border
-                                bg-slate-100 border-slate-200 dark:bg-slate-950 dark:border-slate-800">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={issue.imageUrl} alt={issue.title} className="w-full h-full object-cover" />
-                </div>
-                <div className="min-w-0">
-                  <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
-                    {issue.category.name}
-                  </span>
-                  <h4 className="text-sm font-bold line-clamp-1 mt-0.5">{issue.title}</h4>
-                  <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 space-x-1 mt-0.5">
-                    <MapPin className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
-                    <span className="truncate">{issue.formattedAddress}</span>
-                  </div>
-                </div>
+      {/* Catalog */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {departments.map((d) => (
+          <div key={d.id} className={`p-4 rounded-3xl border transition ${
+            d.disabled
+              ? 'border-slate-200 dark:border-slate-800 opacity-60'
+              : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900'
+          }`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h4 className="text-sm font-bold truncate">{d.name}</h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{d.id}</p>
               </div>
-
-              <div className="flex flex-col items-end flex-shrink-0">
-                <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-xl
-                                 bg-amber-50 text-amber-800 border border-amber-200
-                                 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20">
-                  {issue.priorityScore.toFixed(2)} pts
-                </span>
-                <span className={`text-[10px] uppercase font-bold mt-1.5 px-2 py-0.5 rounded-full ${
-                  issue.status === 'resolved'
-                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400'
-                    : issue.status === 'in_progress'
-                    ? 'bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-400'
-                    : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400'
-                }`}>
-                  {issue.status.replace('_', ' ')}
-                </span>
+              <StatusPill status={d.disabled ? 'rejected' : 'verified'} className="shrink-0" />
+            </div>
+            <dl className="mt-2.5 space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+              <div className="flex justify-between">
+                <dt>Nodal officer</dt>
+                <dd className="font-semibold text-slate-700 dark:text-slate-200">{d.nodalOfficer}</dd>
               </div>
-            </div>
-
-            {/* Department & SLA badge */}
-            <div className="flex items-center justify-between text-xs p-3 rounded-2xl border
-                            bg-slate-50 border-slate-200/80 text-slate-600 
-                            dark:bg-slate-950 dark:border-slate-800 dark:text-slate-400">
-              <span className="truncate max-w-[65%] font-medium">{issue.category.responsibleDepartment}</span>
-              <div className="flex items-center space-x-1 text-slate-700 dark:text-slate-300 font-semibold">
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                <span>{issue.category.defaultSlaHours}h SLA</span>
+              <div className="flex justify-between">
+                <dt>SLA target</dt>
+                <dd className="font-semibold text-slate-700 dark:text-slate-200">{d.slaHours}h</dd>
               </div>
-            </div>
+              <div className="flex justify-between">
+                <dt>Routed categories</dt>
+                <dd className="font-mono">{d.categoryCodes.join(', ') || '—'}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt>Status</dt>
+                <dd>{d.disabled ? 'Disabled' : 'Receiving routes'}</dd>
+              </div>
+            </dl>
+            <button
+              onClick={() => {
+                setEditingId(d.id);
+                setName(d.name);
+                setNodalOfficer(d.nodalOfficer);
+                setSlaHours(d.slaHours);
+                setDisabled(d.disabled);
+              }}
+              className="mt-3 w-full py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-[11px] font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+            >
+              Edit
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-            {/* Field Assignment & Actions */}
-            <div className="space-y-2.5 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <select
-                disabled={isUpdating}
-                onChange={(e) => {
-                  if (e.target.value) handleWorkerAssign(issue.id, e.target.value);
-                }}
-                value={issue.assignedWorkerName || ''}
-                className="w-full rounded-xl px-3 py-2 text-xs font-medium border
-                           bg-slate-50 border-slate-200 text-slate-800 focus:outline-none
-                           dark:bg-slate-950 dark:border-slate-800 dark:text-slate-200"
-              >
-                <option value="" disabled>Assign Field Crew...</option>
-                {MUNICIPAL_FIELD_WORKERS.map((w) => (
-                  <option key={w} value={w}>{w}</option>
-                ))}
-              </select>
+/* ------------------------------------------------------------------ */
+/* Analytics — KPIs, SLA breaches, audit trail                         */
+/* ------------------------------------------------------------------ */
 
-              {issue.status !== 'resolved' && (
-                <div className="grid grid-cols-2 gap-2.5">
-                  {issue.status !== 'in_progress' && (
-                    <button
-                      disabled={isUpdating}
-                      onClick={() => handleStatusChange(issue.id, 'in_progress')}
-                      className="w-full py-2.5 rounded-2xl border text-xs font-semibold transition
-                                 bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200
-                                 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300 dark:border-slate-700"
-                    >
-                      In Progress
-                    </button>
-                  )}
-                  <button
-                    disabled={isUpdating}
-                    onClick={() => handleStatusChange(issue.id, 'resolved')}
-                    className="w-full py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/20"
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Resolve Proof</span>
-                  </button>
-                </div>
-              )}
-            </div>
+function AnalyticsSection({ analytics, issues }: { analytics: AnalyticsData | null; issues: Issue[] }) {
+  if (!analytics) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center">
+        <BarChart3 className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
+        <p className="mt-3 text-sm font-semibold">{issues.length === 0 ? 'No data yet' : 'Loading analytics…'}</p>
+      </div>
+    );
+  }
+
+  const kpis = [
+    { label: 'Total work orders', value: analytics.totals.total ?? 0 },
+    { label: 'Active', value: analytics.totals.active ?? 0 },
+    { label: 'Resolved', value: analytics.totals.resolved ?? 0 },
+    { label: 'Resolution rate', value: `${analytics.totals.resolutionRate ?? 0}%` },
+    { label: 'Upvotes', value: analytics.totals.upvotes ?? 0 },
+    { label: 'SLA breaches', value: analytics.slaBreachedIssues.length },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2.5">
+        {kpis.map((k) => (
+          <div key={k.label} className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">{k.label}</p>
+            <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white">{k.value}</p>
           </div>
         ))}
       </div>
 
-      {/* DESKTOP VIEW: Roomy Table (>= md) */}
-      <div className="hidden md:block rounded-3xl border shadow-sm overflow-hidden transition-colors
-                      bg-white border-slate-200 
-                      dark:bg-slate-900/80 dark:border-slate-800">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="text-[11px] uppercase tracking-wider font-semibold border-b
-                              bg-slate-50/80 border-slate-200 text-slate-500 
-                              dark:bg-slate-950/80 dark:border-slate-800 dark:text-slate-400">
-              <tr>
-                <th className="py-4 px-6">Priority</th>
-                <th className="py-4 px-6">Incident Details</th>
-                <th className="py-4 px-6">Severity & Reports</th>
-                <th className="py-4 px-6">Department</th>
-                <th className="py-4 px-6">Assigned Squad</th>
-                <th className="py-4 px-6">Status / Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {filteredIssues.map((issue) => (
-                <tr key={issue.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 transition">
-                  <td className="py-5 px-6 align-top">
-                    <span className="inline-flex items-center px-3 py-1 rounded-xl font-mono text-xs font-bold
-                                     bg-amber-50 text-amber-800 border border-amber-200
-                                     dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/20">
-                      {issue.priorityScore.toFixed(2)} pts
-                    </span>
-                  </td>
-                  <td className="py-5 px-6 align-top max-w-xs">
-                    <div className="flex space-x-3.5">
-                      <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 border
-                                      bg-slate-100 border-slate-200 dark:bg-slate-950 dark:border-slate-800">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={issue.imageUrl} alt={issue.title} className="w-full h-full object-cover" />
-                      </div>
-                      <div className="min-w-0">
-                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block">
-                          {issue.category.name}
-                        </span>
-                        <h4 className="text-xs font-bold line-clamp-1 mt-0.5 text-slate-900 dark:text-white">{issue.title}</h4>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">{issue.formattedAddress}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="py-5 px-6 align-top">
-                    <div className="space-y-1">
-                      <div className="text-slate-800 dark:text-slate-200">Severity: <strong>{issue.mlSeverityScore.toFixed(1)}/5.0</strong></div>
-                      <div className="text-slate-500 dark:text-slate-400 text-[11px]">{issue.reportCount} reports • {issue.communityUpvotes} upvotes</div>
-                    </div>
-                  </td>
-                  <td className="py-5 px-6 align-top">
-                    <div className="font-semibold text-slate-800 dark:text-slate-200">{issue.category.responsibleDepartment}</div>
-                    <div className="text-slate-500 text-[11px] mt-0.5">{issue.category.defaultSlaHours}h SLA</div>
-                  </td>
-                  <td className="py-5 px-6 align-top">
-                    <select
-                      disabled={isUpdating}
-                      onChange={(e) => {
-                        if (e.target.value) handleWorkerAssign(issue.id, e.target.value);
-                      }}
-                      value={issue.assignedWorkerName || ''}
-                      className="rounded-xl px-3 py-1.5 text-xs font-medium border
-                                 bg-slate-50 border-slate-200 text-slate-800 
-                                 dark:bg-slate-950 dark:border-slate-800 dark:text-slate-300"
-                    >
-                      <option value="" disabled>Assign Squad...</option>
-                      {MUNICIPAL_FIELD_WORKERS.map((w) => (
-                        <option key={w} value={w}>{w}</option>
-                      ))}
-                    </select>
-                  </td>
-                  <td className="py-5 px-6 align-top">
-                    <div className="flex items-center space-x-2.5">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                        issue.status === 'resolved'
-                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-400'
-                          : issue.status === 'in_progress'
-                          ? 'bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-400'
-                          : 'bg-amber-100 text-amber-800 dark:bg-amber-500/20 dark:text-amber-400'
-                      }`}>
-                        {issue.status.replace('_', ' ')}
-                      </span>
-                      {issue.status !== 'resolved' && (
-                        <button
-                          onClick={() => handleStatusChange(issue.id, 'resolved')}
-                          className="px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs flex items-center space-x-1 shadow-sm"
-                        >
-                          <CheckCircle className="w-3.5 h-3.5" />
-                          <span>Resolve</span>
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Department SLA table */}
+      <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+        <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center space-x-2">
+          <Building2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+          <h3 className="text-xs font-bold uppercase tracking-wider">Department health</h3>
         </div>
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-slate-400 border-b border-slate-100 dark:border-slate-800">
+              <th className="px-4 py-2.5 font-semibold">Department</th>
+              <th className="px-2 py-2.5 font-semibold text-center">Open</th>
+              <th className="px-2 py-2.5 font-semibold text-center">Avg age (h)</th>
+              <th className="px-2 py-2.5 font-semibold text-center">SLA breaches</th>
+              <th className="px-4 py-2.5 font-semibold text-center">Resolved</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.values(analytics.byDepartment).map((d) => (
+              <tr key={d.name} className="border-b border-slate-100 dark:border-slate-800 last:border-0">
+                <td className="px-4 py-2.5 font-semibold text-slate-700 dark:text-slate-200">{d.name}</td>
+                <td className="px-2 py-2.5 text-center">{d.open}</td>
+                <td className="px-2 py-2.5 text-center">{d.avgHours}</td>
+                <td className="px-2 py-2.5 text-center">
+                  {d.slaBreaches > 0 ? (
+                    <span className="inline-flex items-center space-x-1 text-rose-600 dark:text-rose-400 font-bold">
+                      <AlertTriangle className="w-3 h-3" />
+                      <span>{d.slaBreaches}</span>
+                    </span>
+                  ) : (
+                    <span className="text-emerald-600 dark:text-emerald-400">0</span>
+                  )}
+                </td>
+                <td className="px-4 py-2.5 text-center">{d.resolved}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* Resolution Proof Upload Modal with spacious form */}
-      {resolvingIssue && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md">
-          <div className="w-full max-w-md rounded-3xl p-6 border shadow-2xl space-y-4
-                          bg-white border-slate-200 text-slate-900 
-                          dark:bg-slate-900 dark:border-slate-800 dark:text-slate-100">
-            
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center space-x-2">
-                <FileCheck2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                <h3 className="font-bold text-base">Resolution Ground Proof</h3>
+      {/* SLA breached tickets */}
+      {analytics.slaBreachedIssues.length > 0 && (
+        <div className="rounded-3xl border border-rose-300 dark:border-rose-500/40 bg-rose-50/50 dark:bg-rose-500/5 overflow-hidden">
+          <div className="px-4 py-3 border-b border-rose-200 dark:border-rose-500/30 flex items-center space-x-2">
+            <Clock className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-rose-700 dark:text-rose-300">SLA breached</h3>
+          </div>
+          <div className="divide-y divide-rose-100 dark:divide-rose-500/20">
+            {analytics.slaBreachedIssues.map((b) => (
+              <div key={b.id} className="px-4 py-2.5 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate">{b.title}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">{b.id}</p>
+                </div>
+                <div className="flex items-center space-x-2 shrink-0">
+                  <StatusPill status={b.status} />
+                  <span className="text-[10px] font-mono text-rose-600 dark:text-rose-400">
+                    {b.slaDeadlineAt ? new Date(b.slaDeadlineAt).toLocaleString() : ''}
+                  </span>
+                </div>
               </div>
-              <button onClick={() => setResolvingIssue(null)} className="text-slate-400 hover:text-slate-700 dark:hover:text-white">✕</button>
-            </div>
+            ))}
+          </div>
+        </div>
+      )}
 
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Attaching proof for: <strong>{resolvingIssue.title}</strong>
-            </p>
-
-            <div className="space-y-3.5">
-              <div>
-                <label className="text-xs font-semibold uppercase block mb-1">
-                  Resolution Photo URL
-                </label>
-                <input
-                  type="text"
-                  placeholder="https://... image URL"
-                  value={resolutionProofUrl}
-                  onChange={(e) => setResolutionProofUrl(e.target.value)}
-                  className="w-full rounded-xl px-3 py-2 text-xs border
-                             bg-slate-50 border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-500
-                             dark:bg-slate-950 dark:border-slate-800 dark:text-slate-200"
-                />
+      {/* Audit trail */}
+      {analytics.recentAudit.length > 0 && (
+        <div className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Recent audit trail
+            </h3>
+          </div>
+          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+            {analytics.recentAudit.map((a) => (
+              <div key={a.id} className="px-4 py-2.5 flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                    <span className="text-emerald-600 dark:text-emerald-400 font-mono">{a.action}</span>
+                    <span className="text-slate-400"> · </span>
+                    {a.detail}
+                  </p>
+                </div>
+                <span className="shrink-0 text-[10px] text-slate-400">
+                  {a.actorName} · {new Date(a.createdAt).toLocaleTimeString()}
+                </span>
               </div>
-
-              <div>
-                <label className="text-xs font-semibold uppercase block mb-1">
-                  Work Completion Summary
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="e.g. Asphalting completed; drain unclogged..."
-                  value={resolutionNotes}
-                  onChange={(e) => setResolutionNotes(e.target.value)}
-                  className="w-full rounded-xl px-3 py-2 text-xs border
-                             bg-slate-50 border-slate-200 text-slate-800 focus:outline-none focus:border-emerald-500
-                             dark:bg-slate-950 dark:border-slate-800 dark:text-slate-200"
-                />
-              </div>
-
-              <div className="pt-2 flex items-center space-x-3">
-                <button
-                  type="button"
-                  onClick={() => setResolvingIssue(null)}
-                  className="flex-1 py-2.5 rounded-xl border text-xs font-semibold transition
-                             bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200
-                             dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  disabled={isUpdating}
-                  onClick={submitResolution}
-                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 flex items-center justify-center space-x-1.5 shadow-md shadow-emerald-600/20"
-                >
-                  <CheckCircle className="w-4 h-4" />
-                  <span>Mark Resolved</span>
-                </button>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       )}
     </div>
   );
-};
+}
+
+/* ------------------------------------------------------------------ */
+/* Shared row                                                           */
+/* ------------------------------------------------------------------ */
+
+function IssueRow({ issue, children }: { issue: Issue; children?: React.ReactNode }) {
+  return (
+    <article className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+      <div className="flex items-start space-x-3 p-3.5">
+        {issue.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={issue.imageUrl} alt={issue.title} className="w-20 h-20 rounded-2xl object-cover flex-shrink-0" />
+        ) : (
+          <div className="w-20 h-20 rounded-2xl bg-slate-100 dark:bg-slate-800 flex-shrink-0" />
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-bold truncate">{issue.title}</h3>
+            <StatusPill status={issue.status} />
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-2">{issue.description}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-slate-500 dark:text-slate-400">
+            <span className="font-mono">{issue.id}</span>
+            <span>{issue.category.name}</span>
+            {issue.priorityScore > 0 && <span>P{Math.round(issue.priorityScore)}</span>}
+            {issue.assignedWorkerName && <span>→ {issue.assignedWorkerName}</span>}
+            {issue.assignedDepartment && <span>· {issue.assignedDepartment}</span>}
+          </div>
+          {issue.transcript && (
+            <p className="mt-1.5 text-[11px] text-emerald-800 dark:text-emerald-300 italic flex items-start space-x-1">
+              <Mic className="w-3 h-3 flex-shrink-0 mt-0.5" />
+              <span>“{issue.transcript}”</span>
+            </p>
+          )}
+        </div>
+      </div>
+      {children && <div className="px-3.5 pb-3.5">{children}</div>}
+    </article>
+  );
+}

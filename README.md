@@ -43,6 +43,25 @@ docker compose up -d
 ```
 Spins up PostgreSQL 16 with PostGIS extension on port 5432 and MinIO Object Storage on port 9000/9001.
 
+### 4. Try the 3-Tier Role-Personas (Real RBAC — no shared access)
+
+The app ships with **three strictly-separated personas**, each with its own account and permissions enforced **server-side** (JWT cookie + per-route role guards + department isolation — not just hidden buttons).
+
+| Persona | How to sign in | What you get |
+| :--- | :--- | :--- |
+| **Citizen** | `Sign in → Citizen (OTP)` — enter any 10-digit mobile number; the demo OTP is shown on screen | Report hazards (photo + voice note), upvote **once** per report, track own reports, live status notifications |
+| **Department Staff** | `Sign in → Staff / Admin` — one-tap demo accounts | Department-scoped task queue (`Start Work → upload proof-of-work → Mark Resolved`), reassignment requests |
+| **City Admin** | Same one-tap panel, `admin@city.gov` | Full console: **Triage** (verify/reject), **Dispatch** (assign dept + worker, merge duplicates, reject), **Departments** CRUD, **Analytics** (KPIs, SLA breaches, audit trail) |
+
+Demo accounts:
+```
+water@city.gov  / demo1234    -> Water Supply & Sanitation (DEPT_WATER)
+roads@city.gov  / demo1234    -> Public Works & Roads (DEPT_PWD)
+admin@city.gov  / admin1234   -> City Admin (super-admin; verifies, dispatches, never self-resolves)
+```
+
+Try signing in as **Water** and opening a Roads ticket — you'll get a hard `403`. The workflow state machine runs `SUBMITTED → VERIFIED → ASSIGNED → IN_PROGRESS → RESOLVED` (proof photo required before RESOLVED), plus `REJECTED` and `MERGED_DUPLICATE`.
+
 ---
 
 ## 📂 Architecture & Key Code
@@ -53,4 +72,4 @@ Spins up PostgreSQL 16 with PostGIS extension on port 5432 and MinIO Object Stor
 - **Spatial Deduplication Engine:** [`src/lib/store.ts`](file:///C:/Users/Krishna%20mohan/OneDrive/Desktop/New%20folder/src/lib/store.ts)
 - **Multilingual Indian Languages (8 Langs):** [`src/lib/languages.ts`](file:///C:/Users/Krishna%20mohan/OneDrive/Desktop/New%20folder/src/lib/languages.ts)
 - **PostGIS SQL Schema:** [`database/schema.sql`](file:///C:/Users/Krishna%20mohan/OneDrive/Desktop/New%20folder/database/schema.sql)
-- **Municipal Command Center:** [`src/components/MunicipalPortal.tsx`](file:///C:/Users/Krishna%20mohan/OneDrive/Desktop/New%20folder/src/components/MunicipalPortal.tsx)
+- **Municipal Command Console (admin):** [`src/components/AdminPortal.tsx`](file:///C:/Users/Krishna%20mohan/OneDrive/Desktop/New%20folder/src/components/AdminPortal.tsx)

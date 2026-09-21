@@ -74,30 +74,63 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   const [liveTranscript, setLiveTranscript] = useState<string>('');
   const recognitionRef = useRef<any>(null);
 
+  // Voice note: records an audio clip while the citizen speaks, so the report
+  // ships with both a playable clip AND its transcription (fed to ML analysis).
+  const [voiceNote, setVoiceNote] = useState<{ audioUrl: string; transcript: string } | null>(null);
+  const [clipSeconds, setClipSeconds] = useState<number>(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   // Stop any active recognition when the modal closes or unmounts
   useEffect(() => {
-    if (!isOpen && recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (!isOpen) {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
+      if (recognitionRef.current) recognitionRef.current.stop();
       setIsRecording(false);
       setLiveTranscript('');
+      setClipSeconds(0);
     }
   }, [isOpen]);
 
   useEffect(() => {
     return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        try {
+          mediaRecorderRef.current.stop();
+        } catch {
+          // ignore
+        }
+      }
       if (recognitionRef.current) recognitionRef.current.stop();
     };
   }, []);
 
+  // Recorder timer
+  useEffect(() => {
+    if (!isRecording) return;
+    const startTime = Date.now();
+    const id = setInterval(() => setClipSeconds(Math.floor((Date.now() - startTime) / 1000)), 1000);
+    return () => clearInterval(id);
+  }, [isRecording]);
+
   if (!isOpen) return null;
 
-  // Starts / stops voice recognition. Recognised text lands in the landmark box
-  // in the language the citizen speaks (hi-IN, ta-IN, te-IN, ...).
-  const toggleVoiceInput = () => {
+  // Starts / stops voice recognition + audio clip recording. Recognised text
+  // lands in the landmark box in the citizen's language (hi-IN, ta-IN, te-IN…)
+  // and a playable audio clip is captured alongside it.
+  const toggleVoiceInput = async () => {
     if (isRecording) {
-      recognitionRef.current?.stop();
-      setIsRecording(false);
-      setLiveTranscript('');
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      } else {
+        recognitionRef.current?.stop();
+      }
       return;
     }
 
@@ -146,15 +179,52 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         setErrorMessage('Microphone permission denied. Please allow the mic to use voice reporting.');
         setIsRecording(false);
         setLiveTranscript('');
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
       }
     };
 
     recognition.onend = () => {
       setIsRecording(false);
       setLiveTranscript('');
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
+      }
     };
 
     recognitionRef.current = recognition;
+
+    // Record the audio clip alongside the live transcription — no server round
+    // trip, fully on-device (the clip is uploaded with the report as evidence).
+    try {
+      if (navigator.mediaDevices?.getUserMedia) {
+        audioChunksRef.current = [];
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mr = new MediaRecorder(stream);
+        mr.ondataavailable = (e: BlobEvent) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
+        };
+        mr.onstop = () => {
+          const type = mr.mimeType || 'audio/webm';
+          const blob = new Blob(audioChunksRef.current, { type });
+          const reader = new FileReader();
+          reader.onload = () => {
+            setVoiceNote((prev) => ({
+              audioUrl: String(reader.result || ''),
+              transcript: prev?.transcript || notes.trim(),
+            }));
+          };
+          reader.readAsDataURL(blob);
+          stream.getTracks().forEach((t) => t.stop());
+        };
+        mr.start();
+        mediaRecorderRef.current = mr;
+      }
+    } catch {
+      // Mic unavailable for recording — live transcription still works.
+    }
+
     recognition.start();
     setIsRecording(true);
     setErrorMessage(null);
@@ -175,6 +245,9 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
     // Commit any pending spoken text before submitting
     if (recognitionRef.current) recognitionRef.current.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
     setIsRecording(false);
     setLiveTranscript('');
 
@@ -190,6 +263,8 @@ export const ReportModal: React.FC<ReportModalProps> = ({
         isOnSite: location.isOnSite,
         imageUrl,
         citizenNotes: notes,
+        audioUrl: voiceNote?.audioUrl,
+        transcript: voiceNote?.transcript || undefined,
         exif,
         locationDetails: location.locationDetails,
       };
@@ -217,8 +292,19 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
   const resetAndClose = () => {
     if (recognitionRef.current) recognitionRef.current.stop();
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {
+        // ignore
+      }
+    }
+    mediaRecorderRef.current = null;
+    audioChunksRef.current = [];
     setIsRecording(false);
     setLiveTranscript('');
+    setVoiceNote(null);
+    setClipSeconds(0);
     setSubmissionResult(null);
     setErrorMessage(null);
     setImageUrl('');
@@ -436,10 +522,35 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                   <p className="text-[11px] text-rose-600 dark:text-rose-400 flex items-center space-x-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping" />
                     <span>
-                      {t.micListening} — {activeLangMeta.speechCode}
+                      {t.micListening} — {activeLangMeta.speechCode} · {clipSeconds}s
                       {liveTranscript && <span className="text-slate-500 dark:text-slate-400"> · “{liveTranscript}”</span>}
                     </span>
                   </p>
+                )}
+
+                {voiceNote && (
+                  <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center space-x-1.5">
+                        <Mic className="w-3.5 h-3.5" />
+                        <span>Voice note ready — the clip & transcript ship with your report</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setVoiceNote(null)}
+                        aria-label="Remove voice note"
+                        className="text-[10px] font-bold px-2 py-1 rounded-lg text-slate-400 hover:text-rose-500"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {voiceNote.audioUrl && (
+                      <audio controls src={voiceNote.audioUrl} className="w-full h-9 mt-2" preload="metadata" />
+                    )}
+                    {voiceNote.transcript && (
+                      <p className="mt-1.5 text-[11px] text-slate-600 dark:text-slate-300 italic">“{voiceNote.transcript}”</p>
+                    )}
+                  </div>
                 )}
               </div>
             </form>
