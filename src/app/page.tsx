@@ -272,7 +272,7 @@ export default function HomePage() {
 
       {/* Location permission banner — fires once, on first open */}
       {(locStatus === 'denied' || locStatus === 'unsupported') && (
-        <div className="px-4 py-2.5 text-xs flex items-center justify-between gap-3
+        <div className="px-4 py-2 text-xs flex items-center justify-between gap-3
                         bg-amber-50 border-b border-amber-200 text-amber-800
                         dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300">
           <span className="flex items-center space-x-1.5">
@@ -296,7 +296,7 @@ export default function HomePage() {
 
       {/* Guest / citizen call-to-action strip */}
       {!session && (
-        <div className="px-4 py-2.5 text-xs flex items-center justify-between gap-3
+        <div className="px-4 py-2 text-xs flex items-center justify-between gap-3
                         bg-emerald-50 border-b border-emerald-200 text-emerald-800
                         dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-300">
           <span>
@@ -313,7 +313,7 @@ export default function HomePage() {
       )}
 
       {/* Main Viewport Container */}
-      <div className="flex-1 flex flex-col relative">
+      <div className={`flex-1 flex flex-col relative ${activeTab === 'map' ? 'pb-[4.5rem] md:pb-0' : ''}`}>
         {activeTab === 'map' && (
           <CivicMap
             issues={filteredMapIssues}

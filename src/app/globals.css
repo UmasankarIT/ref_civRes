@@ -74,6 +74,88 @@
   font-family: inherit !important;
 }
 
+/* Leaflet bottom-right controls — zoom (+/−) and attribution are stacked
+   independently by Leaflet inside their corner container; we inset the corner
+   so it aligns with the floating GPS recenter button (right-5) and keep the
+   recenter button on a separate z-index ABOVE them (CivicMap positions it at
+   md:bottom-32, clear of this ~100px stack). No two controls may overlap. */
+.leaflet-control-container .leaflet-bottom.leaflet-right {
+  right: 20px !important;
+  z-index: 640; /* within the map pane, below the app-level floating buttons (z-30) */
+}
+
+.leaflet-control-zoom {
+  border-radius: 1rem !important;
+  overflow: hidden !important;
+  border: 1px solid rgba(226, 232, 240, 0.95) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08) !important;
+  margin-bottom: 12px !important;
+}
+
+.leaflet-control-zoom a {
+  width: 36px !important;
+  height: 36px !important;
+  line-height: 34px !important;
+  font-size: 18px !important;
+  color: #334155 !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9) !important;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #ffffff !important;
+  color: #059669 !important;
+}
+
+.leaflet-control-zoom a:first-child {
+  border-radius: 0.9rem 0.9rem 0 0;
+}
+
+.leaflet-control-zoom a:last-child {
+  border-bottom: 0;
+  border-radius: 0 0 0.9rem 0.9rem;
+}
+
+.leaflet-control-attribution {
+  font-size: 10px !important;
+  padding: 3px 10px !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  backdrop-filter: blur(8px);
+  color: #64748b !important;
+  border-radius: 10px 0 0 0;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.06);
+}
+
+.leaflet-control-attribution a {
+  color: #059669 !important;
+}
+
+.dark .leaflet-control-zoom {
+  border-color: rgba(30, 41, 59, 0.95) !important;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5) !important;
+}
+
+.dark .leaflet-control-zoom a {
+  color: #cbd5e1 !important;
+  background: rgba(15, 23, 42, 0.94) !important;
+  border-bottom-color: rgba(30, 41, 59, 0.95) !important;
+}
+
+.dark .leaflet-control-zoom a:hover {
+  background: #0f172a !important;
+  color: #34d399 !important;
+}
+
+.dark .leaflet-control-attribution {
+  background: rgba(15, 23, 42, 0.85) !important;
+  color: #94a3b8 !important;
+}
+
+.dark .leaflet-control-attribution a {
+  color: #34d399 !important;
+}
+
 /* Radar pulse animation for user location marker */
 @keyframes radar-wave {
   0% {

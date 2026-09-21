@@ -374,7 +374,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   };
 
   return (
-    <div className="relative w-full h-[calc(100dvh-4rem-4.5rem)] md:h-[calc(100vh-5rem)] flex flex-col overflow-hidden transition-colors
+    <div className="relative w-full flex-1 min-h-0 flex flex-col overflow-hidden transition-colors
                     bg-slate-100 dark:bg-slate-950">
       
       {/* Floating Filter Chips with Ample Breathing Room */}
@@ -509,8 +509,10 @@ export const CivicMap: React.FC<CivicMapProps> = ({
         </div>
       </div>
 
-      {/* Floating GPS Recenter button */}
-      <div className="absolute right-5 bottom-6 md:bottom-8 z-20 pointer-events-auto">
+      {/* Floating GPS Recenter button — sits ABOVE the Leaflet zoom + attribution
+          stack (bottom-right, md+), each control spaced independently so they
+          never overlap: attribution (bottom) → zoom (+/−, above) → recenter (top). */}
+      <div className="absolute right-5 bottom-9 md:bottom-32 z-30 pointer-events-auto">
         <button
           onClick={recenterGPS}
           className="p-3.5 rounded-full border shadow-xl backdrop-blur-md active:scale-95 transition-all
