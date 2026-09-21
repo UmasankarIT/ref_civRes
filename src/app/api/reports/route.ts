@@ -4,9 +4,21 @@ import { findNearbyActiveIssue, generateMockAddress, calculateGeodesicDistanceMe
 import { calculatePriorityScore } from '@/lib/scoring';
 import { analyzeIssueImage } from '@/lib/mlVision';
 import { CreateReportRequest, Issue, IssueReport } from '@/lib/types';
+import { getSession, unauthorized } from '@/lib/auth';
+import { departmentForCategory } from '@/lib/departments';
+import { slaDeadlineFor } from '@/lib/workflow';
+import { logAction, notifyUser } from '@/lib/events';
+import { CITY_ADMIN_USER_ID } from '@/lib/auth';
 
 export async function POST(req: NextRequest) {
   try {
+    // RBAC: every report must come from a signed-in actor. Citizens report on
+    // their own behalf; staff/admin may also surface issues they spot in field.
+    const user = await getSession(req);
+    if (!user) {
+      return unauthorized('Sign in to submit a report.');
+    }
+
     const body = (await req.json()) as CreateReportRequest;
 
     if (!body.categoryId || body.latitude === undefined || body.longitude === undefined || !body.imageUrl) {
@@ -20,6 +32,9 @@ export async function POST(req: NextRequest) {
     if (!category) {
       return NextResponse.json({ error: 'Invalid category specified.' }, { status: 400 });
     }
+
+    // Automatic department routing — ambiguous/OTHERS land in triage (DEPT_UNASSIGNED)
+    const dept = departmentForCategory(category);
 
     // 1. Process EXIF metadata and detect any coordinate tampering/spoofing
     const exif = body.exif || { hasGps: false };
@@ -61,12 +76,15 @@ export async function POST(req: NextRequest) {
       const report: IssueReport = {
         id: reportId,
         issueId: existingIssue.id,
+        citizenUserId: user.userId,
         latitude: body.latitude,
         longitude: body.longitude,
         accuracyMeters: body.accuracyMeters || 10,
         isOnSite: body.isOnSite,
         imageUrl: body.imageUrl,
         citizenNotes: body.citizenNotes,
+        audioUrl: body.audioUrl,
+        transcript: body.transcript,
         exif,
         locationDetails: body.locationDetails,
         createdAt: new Date().toISOString(),
@@ -75,6 +93,8 @@ export async function POST(req: NextRequest) {
       // Add to store & atomically recalculate priority
       civicStore.addReport(report);
       const updatedIssue = civicStore.incrementIssueReport(existingIssue.id, report);
+
+      logAction(user, 'reports.submit.duplicate', `Matched existing incident ${existingIssue.id} within ${match.distanceMeters}m.`, existingIssue.id);
 
       return NextResponse.json({
         issueId: existingIssue.id,
@@ -102,12 +122,15 @@ export async function POST(req: NextRequest) {
     const newReport: IssueReport = {
       id: reportId,
       issueId,
+      citizenUserId: user.userId,
       latitude: body.latitude,
       longitude: body.longitude,
       accuracyMeters: body.accuracyMeters || 10,
       isOnSite: body.isOnSite,
       imageUrl: body.imageUrl,
       citizenNotes: body.citizenNotes,
+      audioUrl: body.audioUrl,
+      transcript: body.transcript,
       exif,
       locationDetails: body.locationDetails,
       createdAt: new Date().toISOString(),
@@ -123,6 +146,13 @@ export async function POST(req: NextRequest) {
       longitude: body.longitude,
       formattedAddress: generateMockAddress(body.latitude, body.longitude),
       locationDetails: body.locationDetails,
+      departmentId: dept.id,
+      jurisdictionCode: body.locationDetails?.mandal || body.locationDetails?.pincode,
+      citizenUserId: user.userId,
+      citizenName: user.name,
+      slaDeadlineAt: slaDeadlineFor(dept.slaHours),
+      audioUrl: body.audioUrl,
+      transcript: body.transcript,
       status: 'reported',
       reportCount: 1,
       communityUpvotes: 0,
@@ -138,14 +168,23 @@ export async function POST(req: NextRequest) {
     civicStore.addIssue(newIssue);
     civicStore.addReport(newReport);
 
+    logAction(user, 'reports.submit', `${category.name} routed to ${dept.name}.`, issueId);
+    notifyUser(
+      CITY_ADMIN_USER_ID,
+      'New report in triage',
+      `${category.name} near ${newIssue.formattedAddress} — routed to ${dept.name}.`,
+      issueId
+    );
+
     return NextResponse.json({
       issueId,
       isDuplicate: false,
       reportCount: 1,
       status: 'reported',
+      departmentId: dept.id,
       priorityScore: priorityBreakdown.totalScore,
       mlAnalysis,
-      message: 'New incident logged and dispatched to municipal queue.',
+      message: `New incident logged and routed to ${dept.name}.`,
     });
   } catch (error: unknown) {
     console.error('Error submitting report:', error);
