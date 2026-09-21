@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Issue, Category, LocationFix, GeocodeHit, GeocodeResponse } from '@/lib/types';
+import { Issue, Category, LocationFix, GeocodeHit } from '@/lib/types';
+import { searchPlaces } from '@/lib/places';
 import { 
   ThumbsUp, 
   MapPin, 
@@ -59,6 +60,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   const [locating, setLocating] = useState<boolean>(false);
   const [gpsStatus, setGpsStatus] = useState<string>('Tap crosshair to locate you');
   const searchMarkerRef = useRef<any>(null);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
   const [mapQuery, setMapQuery] = useState<string>('');
   const [mapResults, setMapResults] = useState<GeocodeHit[]>([]);
   const [mapSearching, setMapSearching] = useState<boolean>(false);
@@ -225,10 +227,8 @@ export const CivicMap: React.FC<CivicMapProps> = ({
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`, { signal: controller.signal });
-        if (!res.ok) throw new Error(String(res.status));
-        const data = (await res.json()) as GeocodeResponse;
-        setMapResults(data.results || []);
+        const hits = await searchPlaces(q, controller.signal);
+        setMapResults(hits);
       } catch (err: any) {
         if (err?.name === 'AbortError') return;
         setMapSearchError(true);
@@ -242,6 +242,18 @@ export const CivicMap: React.FC<CivicMapProps> = ({
       controller.abort();
     };
   }, [mapQuery]);
+
+  // Close the search dropdown when clicking anywhere outside it
+  useEffect(() => {
+    if (!mapShowResults) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setMapShowResults(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [mapShowResults]);
 
   const flyToPlace = (hit: GeocodeHit) => {
     const map = mapInstanceRef.current;
@@ -417,7 +429,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
       </div>
 
       {/* Place search — jump to any location to browse its issues */}
-      <div className="absolute top-[5.2rem] md:top-[4.6rem] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-md md:w-80 pointer-events-auto">
+      <div ref={searchBoxRef} className="absolute top-[5.2rem] md:top-[4.6rem] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-md md:w-80 pointer-events-auto">
         <div className="flex items-center space-x-2 px-3 py-2.5 rounded-2xl border shadow-xl backdrop-blur-xl
                         bg-white/95 border-slate-200 text-slate-700
                         dark:bg-slate-950/95 dark:border-slate-800 dark:text-slate-200">
@@ -427,7 +439,6 @@ export const CivicMap: React.FC<CivicMapProps> = ({
             value={mapQuery}
             onChange={(e) => { setMapQuery(e.target.value); setMapShowResults(true); }}
             onFocus={() => setMapShowResults(true)}
-            onBlur={() => setTimeout(() => setMapShowResults(false), 160)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && mapResults.length > 0) {
                 e.preventDefault();
@@ -470,6 +481,8 @@ export const CivicMap: React.FC<CivicMapProps> = ({
                 <button
                   key={`${hit.lat},${hit.lon},${i}`}
                   type="button"
+                  // Keep focus on the input so this click is never cancelled by a blur-triggered close
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => flyToPlace(hit)}
                   className="w-full text-left px-4 py-2.5 flex items-start space-x-2.5 transition hover:bg-slate-50 dark:hover:bg-slate-800"
                 >

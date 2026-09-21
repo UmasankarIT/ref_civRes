@@ -15,7 +15,8 @@ import {
   X
 } from 'lucide-react';
 import { calculateGeodesicDistanceMeters } from '@/lib/spatial';
-import { LocationDetails, LocationFix, GeocodeHit, GeocodeResponse } from '@/lib/types';
+import { LocationDetails, LocationFix, GeocodeHit } from '@/lib/types';
+import { searchPlaces } from '@/lib/places';
 import { SupportedLanguage, TRANSLATIONS } from '@/lib/languages';
 
 // Neutral default (geographic centre of India) — actual coordinate is auto-fetched via GPS
@@ -60,6 +61,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   const [searching, setSearching] = useState<boolean>(false);
   const [searchError, setSearchError] = useState<boolean>(false);
   const [showResults, setShowResults] = useState<boolean>(false);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
 
   // Reverse-geocoded administrative details (state / district / mandal / pincode)
   const [locationDetails, setLocationDetails] = useState<LocationDetails | null>(null);
@@ -212,10 +214,8 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`, { signal: controller.signal });
-        if (!res.ok) throw new Error(String(res.status));
-        const data = (await res.json()) as GeocodeResponse;
-        setSearchResults(data.results || []);
+        const hits = await searchPlaces(q, controller.signal);
+        setSearchResults(hits);
       } catch (err: any) {
         if (err?.name === 'AbortError') return;
         setSearchError(true);
@@ -229,6 +229,18 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       controller.abort();
     };
   }, [searchQuery]);
+
+  // Close the search dropdown when clicking/tapping outside it
+  useEffect(() => {
+    if (!showResults) return;
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, [showResults]);
 
   // Apply a searched place: move the pin there and treat it as a remote report
   const applySearchedPlace = (hit: GeocodeHit) => {
@@ -305,7 +317,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       )}
 
       {/* Search / type a location — works even when GPS is unavailable (remote reporting) */}
-      <div className="relative">
+      <div ref={searchBoxRef} className="relative">
         <p className="text-[10px] text-slate-400 dark:text-slate-500 font-bold uppercase tracking-wider flex items-center space-x-1.5 mb-1.5">
           <Search className="w-3 h-3" />
           <span>{t.locSearchIntro}</span>
@@ -319,7 +331,6 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
             value={searchQuery}
             onChange={(e) => { setSearchQuery(e.target.value); setShowResults(true); }}
             onFocus={() => setShowResults(true)}
-            onBlur={() => setTimeout(() => setShowResults(false), 160)}
             placeholder={t.locSearchPlaceholder}
             className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none"
           />
@@ -354,6 +365,8 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
                 <button
                   key={`${hit.lat},${hit.lon},${i}`}
                   type="button"
+                  // Keep focus on the input so this click is never cancelled by a blur-triggered close
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => applySearchedPlace(hit)}
                   className="w-full text-left px-4 py-2.5 flex items-start space-x-2.5 transition hover:bg-slate-50 dark:hover:bg-slate-800"
                 >
