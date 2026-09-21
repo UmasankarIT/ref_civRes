@@ -7,8 +7,8 @@ import { MobileBottomNav } from '@/components/MobileBottomNav';
 import { IssueFeed } from '@/components/IssueFeed';
 import { AdminPortal } from '@/components/AdminPortal';
 import { ReportModal } from '@/components/ReportModal';
-import { Issue, Category, UserRole, SubmissionResponse, IssueStatus } from '@/lib/types';
-import { Loader2 } from 'lucide-react';
+import { Issue, Category, LocationFix, UserRole, SubmissionResponse, IssueStatus } from '@/lib/types';
+import { Loader2, MapPin } from 'lucide-react';
 
 // Dynamic import of CivicMap with SSR disabled to guarantee Leaflet executes only on client
 const CivicMap = dynamic(() => import('@/components/CivicMap').then((mod) => mod.CivicMap), {
@@ -33,6 +33,33 @@ export default function HomePage() {
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
+  const [locStatus, setLocStatus] = useState<'requesting' | 'granted' | 'denied' | 'unsupported'>('requesting');
+  const [userLocation, setUserLocation] = useState<LocationFix | null>(null);
+
+  // Ask for location permission on first open — the whole app centres around the citizen's place
+  const requestLocation = useCallback(() => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setLocStatus('unsupported');
+      return;
+    }
+    setLocStatus('requesting');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracyMeters: pos.coords.accuracy,
+        });
+        setLocStatus('granted');
+      },
+      () => setLocStatus('denied'),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 }
+    );
+  }, []);
+
+  useEffect(() => {
+    requestLocation();
+  }, [requestLocation]);
 
   // Fetch live issues and categories
   const fetchData = useCallback(async () => {
@@ -144,6 +171,30 @@ export default function HomePage() {
         stats={{ totalActive, inProgress, resolved }}
       />
 
+      {/* Location permission banner — fires once, on first open */}
+      {(locStatus === 'denied' || locStatus === 'unsupported') && (
+        <div className="px-4 py-2.5 text-xs flex items-center justify-between gap-3
+                        bg-amber-50 border-b border-amber-200 text-amber-800
+                        dark:bg-amber-500/10 dark:border-amber-500/20 dark:text-amber-300">
+          <span className="flex items-center space-x-1.5">
+            <MapPin className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>
+              {locStatus === 'unsupported'
+                ? 'This browser does not support location services.'
+                : 'Location access is needed so your reports map to your exact place — allow it and retry.'}
+            </span>
+          </span>
+          {locStatus === 'denied' && (
+            <button
+              onClick={requestLocation}
+              className="shrink-0 px-3 py-1.5 rounded-full bg-amber-600 hover:bg-amber-500 text-white font-bold transition active:scale-95"
+            >
+              Enable Location
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Main Viewport Container */}
       <div className="flex-1 flex flex-col relative">
         {activeTab === 'map' && (
@@ -156,6 +207,8 @@ export default function HomePage() {
             onSelectStatus={setSelectedStatus}
             onUpvote={handleUpvote}
             selectedIssueId={selectedIssueId}
+            initialLocation={userLocation}
+            locationStatus={locStatus}
           />
         )}
 
@@ -192,6 +245,7 @@ export default function HomePage() {
         onClose={() => setIsReportModalOpen(false)}
         categories={categories}
         onReportSubmitted={handleReportSubmitted}
+        initialLocation={userLocation}
       />
     </main>
   );

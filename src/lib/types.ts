@@ -40,6 +40,12 @@ export interface ExifMetadata {
   deviceModel?: string;
 }
 
+export interface LocationFix {
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number;
+}
+
 export interface LocationDetails {
   state?: string;
   district?: string;

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Issue, Category } from '@/lib/types';
+import { Issue, Category, LocationFix } from '@/lib/types';
 import { 
   ThumbsUp, 
   MapPin, 
@@ -29,6 +29,8 @@ interface CivicMapProps {
   onUpvote: (issueId: string) => void;
   onSelectIssue?: (issue: Issue) => void;
   selectedIssueId?: string | null;
+  initialLocation?: LocationFix | null;
+  locationStatus?: 'idle' | 'requesting' | 'granted' | 'denied' | 'unsupported';
 }
 
 export const CivicMap: React.FC<CivicMapProps> = ({
@@ -41,6 +43,8 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   onUpvote,
   onSelectIssue,
   selectedIssueId,
+  initialLocation = null,
+  locationStatus = 'idle',
 }) => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -141,8 +145,8 @@ export const CivicMap: React.FC<CivicMapProps> = ({
 
         mapInstanceRef.current = map;
 
-        // Centre the map on the citizen's actual location as soon as the map is ready
-        locateUser({ animate: true });
+        // The app-level locator (page.tsx) owns the first-open permission prompt;
+        // the map centres itself on the resulting fix via the initialLocation effect below.
       }
     });
 
@@ -167,6 +171,16 @@ export const CivicMap: React.FC<CivicMapProps> = ({
       }
     };
   }, [locateUser]);
+
+  // Centre the map on the citizen's location once the app-level GPS fix arrives
+  useEffect(() => {
+    if (typeof window === 'undefined' || !mapInstanceRef.current || !initialLocation) return;
+    if (userMarkerRef.current) {
+      userMarkerRef.current.setLatLng([initialLocation.latitude, initialLocation.longitude]);
+    }
+    mapInstanceRef.current.flyTo([initialLocation.latitude, initialLocation.longitude], 15, { duration: 1 });
+    setGpsStatus(`Live · ${initialLocation.latitude.toFixed(4)}, ${initialLocation.longitude.toFixed(4)}`);
+  }, [initialLocation]);
 
   // Sync selected issue from prop
   useEffect(() => {
@@ -241,6 +255,17 @@ export const CivicMap: React.FC<CivicMapProps> = ({
     locateUser({ animate: true });
   };
 
+  const pillLabel =
+    locationStatus === 'granted' && initialLocation
+      ? `Live · ${initialLocation.latitude.toFixed(4)}, ${initialLocation.longitude.toFixed(4)}`
+      : locationStatus === 'requesting'
+      ? 'Locating your position…'
+      : locationStatus === 'denied'
+      ? 'Location denied — tap crosshair to retry'
+      : locationStatus === 'unsupported'
+      ? 'Geolocation not supported'
+      : gpsStatus;
+
   const handleUpvoteClick = async (issueId: string) => {
     setUpvotingId(issueId);
     try {
@@ -314,11 +339,12 @@ export const CivicMap: React.FC<CivicMapProps> = ({
 
       {/* Live GPS status pill */}
       <div className="absolute left-5 bottom-6 md:bottom-8 z-20 pointer-events-none">
-        <div className="px-3 py-1.5 rounded-full border shadow-lg backdrop-blur-md text-[11px] font-semibold flex items-center space-x-1.5
+        <div className={`px-3 py-1.5 rounded-full border shadow-lg backdrop-blur-md text-[11px] font-semibold flex items-center space-x-1.5
                         bg-white/90 border-slate-200 text-slate-600
-                        dark:bg-slate-900/90 dark:border-slate-800 dark:text-slate-300">
-          <MapPin className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${locating ? 'animate-pulse' : ''}`} />
-          <span className="font-mono">{gpsStatus}</span>
+                        dark:bg-slate-900/90 dark:border-slate-800 dark:text-slate-300
+                        ${locationStatus === 'denied' ? '!border-rose-200 !text-rose-600 dark:!border-rose-500/30 dark:!text-rose-400' : ''}`}>
+          <MapPin className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${(locating || locationStatus === 'requesting') ? 'animate-pulse' : ''}`} />
+          <span className="font-mono">{pillLabel}</span>
         </div>
       </div>
 

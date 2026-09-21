@@ -13,7 +13,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { calculateGeodesicDistanceMeters } from '@/lib/spatial';
-import { LocationDetails } from '@/lib/types';
+import { LocationDetails, LocationFix } from '@/lib/types';
 import { SupportedLanguage, TRANSLATIONS } from '@/lib/languages';
 
 // Neutral default (geographic centre of India) — actual coordinate is auto-fetched via GPS
@@ -32,18 +32,20 @@ interface LocationPickerProps {
   onLocationResolved: (data: LocationData) => void;
   onSiteThresholdMeters?: number;
   lang?: SupportedLanguage;
+  initialLocation?: LocationFix | null;
 }
 
 export const LocationPicker: React.FC<LocationPickerProps> = ({
   onLocationResolved,
   onSiteThresholdMeters = 80,
   lang = 'en',
+  initialLocation = null,
 }) => {
   const t = TRANSLATIONS[lang];
 
   const [deviceCoords, setDeviceCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [selectedLat, setSelectedLat] = useState<number>(DEFAULT_LAT);
-  const [selectedLng, setSelectedLng] = useState<number>(DEFAULT_LNG);
+  const [selectedLat, setSelectedLat] = useState<number>(initialLocation?.latitude ?? DEFAULT_LAT);
+  const [selectedLng, setSelectedLng] = useState<number>(initialLocation?.longitude ?? DEFAULT_LNG);
   const [accuracy, setAccuracy] = useState<number | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [errorStatus, setErrorStatus] = useState<string | null>(null);
@@ -170,7 +172,21 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   }, [emitLocation, updatePin]);
 
   useEffect(() => {
-    acquireGPS();
+    if (initialLocation) {
+      // App already fetched + granted location at startup — reuse it (no second prompt)
+      updatePin(
+        initialLocation.latitude,
+        initialLocation.longitude,
+        initialLocation.accuracyMeters ?? 10,
+        true
+      );
+      setDeviceCoords({ lat: initialLocation.latitude, lng: initialLocation.longitude });
+      setIsManualOverride(false);
+      emitLocation(detailsRef.current);
+      fetchLocationDetails(initialLocation.latitude, initialLocation.longitude);
+    } else {
+      acquireGPS();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

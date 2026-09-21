@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { LocationPicker, LocationData } from './LocationPicker';
 import { MediaUpload } from './MediaUpload';
-import { Category, ExifMetadata, SubmissionResponse } from '@/lib/types';
+import { Category, ExifMetadata, SubmissionResponse, LocationFix } from '@/lib/types';
 import { SupportedLanguage, SUPPORTED_LANGUAGES, TRANSLATIONS } from '@/lib/languages';
 
 interface ReportModalProps {
@@ -28,6 +28,7 @@ interface ReportModalProps {
   onClose: () => void;
   categories: Category[];
   onReportSubmitted: (result: SubmissionResponse) => void;
+  initialLocation?: LocationFix | null;
 }
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
@@ -48,6 +49,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
   onClose,
   categories,
   onReportSubmitted,
+  initialLocation = null,
 }) => {
   const [lang, setLang] = useState<SupportedLanguage>('en');
   const t = TRANSLATIONS[lang];
@@ -372,7 +374,11 @@ export const ReportModal: React.FC<ReportModalProps> = ({
                 <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                   3. {t.stepLocation}
                 </label>
-                <LocationPicker lang={lang} onLocationResolved={(loc) => setLocation(loc)} />
+                <LocationPicker
+                  lang={lang}
+                  initialLocation={initialLocation}
+                  onLocationResolved={(loc) => setLocation(loc)}
+                />
               </div>
 
               {/* 4. Landmark / Additional Notes + Voice Input */}
