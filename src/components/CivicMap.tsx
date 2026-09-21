@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Issue, Category } from '@/lib/types';
 import { 
   ThumbsUp, 
@@ -46,8 +46,46 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   const mapInstanceRef = useRef<any>(null);
   const tileLayerRef = useRef<any>(null);
   const markersRef = useRef<{ [key: string]: any }>({});
+  const userMarkerRef = useRef<any>(null);
+  const userCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
   const [upvotingId, setUpvotingId] = useState<string | null>(null);
+  const [locating, setLocating] = useState<boolean>(false);
+  const [gpsStatus, setGpsStatus] = useState<string>('Tap crosshair to locate you');
+
+  // Locate the citizen with live GPS and move the radar marker to their real position.
+  // The map is created at the neutral India-centre fallback, then flies to the citizen
+  // once their coordinates resolve (works from any place in India).
+  const locateUser = useCallback(({ animate = true }: { animate?: boolean } = {}) => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      setGpsStatus('Geolocation not supported');
+      return;
+    }
+    setLocating(true);
+    setGpsStatus('Locating you…');
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        userCoordsRef.current = { lat: latitude, lng: longitude };
+        setGpsStatus(`Live · ${latitude.toFixed(4)}, ${longitude.toFixed(4)}`);
+
+        const map = mapInstanceRef.current;
+        if (map) {
+          if (userMarkerRef.current) {
+            userMarkerRef.current.setLatLng([latitude, longitude]);
+          }
+          if (animate) map.flyTo([latitude, longitude], 15, { duration: 1.2 });
+        }
+        setLocating(false);
+      },
+      () => {
+        setLocating(false);
+        setGpsStatus('Location unavailable — tap crosshair to retry');
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 5000 }
+    );
+  }, []);
 
   // Initialize Leaflet Map
   useEffect(() => {
@@ -97,11 +135,14 @@ export const CivicMap: React.FC<CivicMapProps> = ({
           iconAnchor: [16, 16],
         });
 
-        L.marker(DEFAULT_CENTER, { icon: userIcon })
+        userMarkerRef.current = L.marker(DEFAULT_CENTER, { icon: userIcon })
           .addTo(map)
           .bindTooltip('Your Verified Location', { direction: 'top', offset: [0, -10] });
 
         mapInstanceRef.current = map;
+
+        // Centre the map on the citizen's actual location as soon as the map is ready
+        locateUser({ animate: true });
       }
     });
 
@@ -125,7 +166,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
         mapInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [locateUser]);
 
   // Sync selected issue from prop
   useEffect(() => {
@@ -197,9 +238,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   }, [issues, onSelectIssue]);
 
   const recenterGPS = () => {
-    if (mapInstanceRef.current) {
-      mapInstanceRef.current.flyTo(DEFAULT_CENTER, 15, { duration: 1 });
-    }
+    locateUser({ animate: true });
   };
 
   const handleUpvoteClick = async (issueId: string) => {
@@ -270,6 +309,16 @@ export const CivicMap: React.FC<CivicMapProps> = ({
               {st === 'all' ? 'All' : st.replace('_', ' ')}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* Live GPS status pill */}
+      <div className="absolute left-5 bottom-6 md:bottom-8 z-20 pointer-events-none">
+        <div className="px-3 py-1.5 rounded-full border shadow-lg backdrop-blur-md text-[11px] font-semibold flex items-center space-x-1.5
+                        bg-white/90 border-slate-200 text-slate-600
+                        dark:bg-slate-900/90 dark:border-slate-800 dark:text-slate-300">
+          <MapPin className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${locating ? 'animate-pulse' : ''}`} />
+          <span className="font-mono">{gpsStatus}</span>
         </div>
       </div>
 
