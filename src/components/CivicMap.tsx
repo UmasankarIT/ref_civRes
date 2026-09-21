@@ -14,6 +14,11 @@ import {
 // Default map focus: geographic centre of India (actual position is auto-fetched via GPS)
 const DEFAULT_CENTER: [number, number] = [20.5937, 78.9629];
 
+// Free, keyless OSM basemap — CARTO raster tiles now require an API key and show an
+// "API key required" watermark without one. Dark mode is emulated with a CSS filter.
+const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const DARK_TILE_FILTER = 'invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.9) saturate(0.85)';
+
 interface CivicMapProps {
   issues: Issue[];
   categories: Category[];
@@ -55,9 +60,6 @@ export const CivicMap: React.FC<CivicMapProps> = ({
 
       if (!mapInstanceRef.current) {
         const isDark = document.documentElement.classList.contains('dark');
-        const tileUrl = isDark
-          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
 
         const map = L.map(mapContainerRef.current, {
           center: DEFAULT_CENTER,
@@ -65,13 +67,18 @@ export const CivicMap: React.FC<CivicMapProps> = ({
           zoomControl: false,
         });
 
-        const tileLayer = L.tileLayer(tileUrl, {
-          attribution: '&copy; CARTO | CivicResolve',
+        const tileLayer = L.tileLayer(TILE_URL, {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | CivicResolve',
           maxZoom: 19,
-          subdomains: 'abcd',
         }).addTo(map);
 
         tileLayerRef.current = tileLayer;
+
+        // OSM has no native dark tiles; emulate dark mode with a CSS filter on the tile pane
+        const tilePane = map.getPane('tilePane');
+        if (tilePane) {
+          tilePane.style.filter = isDark ? DARK_TILE_FILTER : '';
+        }
 
         if (window.innerWidth >= 768) {
           L.control.zoom({ position: 'bottomright' }).addTo(map);
@@ -98,17 +105,14 @@ export const CivicMap: React.FC<CivicMapProps> = ({
       }
     });
 
-    // Theme change listener to switch tile layer on the fly!
+    // Theme change listener — same keyless OSM tiles, just toggle the dark filter
     const handleThemeChange = (e: any) => {
-      if (!mapInstanceRef.current || !tileLayerRef.current) return;
-      import('leaflet').then((L) => {
-        const isDark = e.detail === 'dark';
-        const newUrl = isDark
-          ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
-          : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-
-        tileLayerRef.current.setUrl(newUrl);
-      });
+      if (!mapInstanceRef.current) return;
+      const isDark = e.detail === 'dark';
+      const tilePane = mapInstanceRef.current.getPane('tilePane');
+      if (tilePane) {
+        tilePane.style.filter = isDark ? DARK_TILE_FILTER : '';
+      }
     };
 
     window.addEventListener('themeChanged', handleThemeChange);
