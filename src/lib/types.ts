@@ -46,6 +46,17 @@ export interface LocationFix {
   accuracyMeters?: number;
 }
 
+export interface GeocodeHit {
+  lat: number;
+  lon: number;
+  label: string;
+  sublabel?: string;
+}
+
+export interface GeocodeResponse {
+  results: GeocodeHit[];
+}
+
 export interface LocationDetails {
   state?: string;
   district?: string;

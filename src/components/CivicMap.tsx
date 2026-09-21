@@ -1,14 +1,16 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Issue, Category, LocationFix } from '@/lib/types';
+import { Issue, Category, LocationFix, GeocodeHit, GeocodeResponse } from '@/lib/types';
 import { 
   ThumbsUp, 
   MapPin, 
   Crosshair, 
   X,
   Zap,
-  ArrowRight
+  ArrowRight,
+  Search,
+  Loader2
 } from 'lucide-react';
 
 // Default map focus: geographic centre of India (actual position is auto-fetched via GPS)
@@ -56,6 +58,12 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   const [upvotingId, setUpvotingId] = useState<string | null>(null);
   const [locating, setLocating] = useState<boolean>(false);
   const [gpsStatus, setGpsStatus] = useState<string>('Tap crosshair to locate you');
+  const searchMarkerRef = useRef<any>(null);
+  const [mapQuery, setMapQuery] = useState<string>('');
+  const [mapResults, setMapResults] = useState<GeocodeHit[]>([]);
+  const [mapSearching, setMapSearching] = useState<boolean>(false);
+  const [mapSearchError, setMapSearchError] = useState<boolean>(false);
+  const [mapShowResults, setMapShowResults] = useState<boolean>(false);
 
   // Locate the citizen with live GPS and move the radar marker to their real position.
   // The map is created at the neutral India-centre fallback, then flies to the citizen
@@ -143,6 +151,24 @@ export const CivicMap: React.FC<CivicMapProps> = ({
           .addTo(map)
           .bindTooltip('Your Verified Location', { direction: 'top', offset: [0, -10] });
 
+        // Hidden pin shown when the citizen searches for a place to view issues anywhere
+        const searchIcon = L.divIcon({
+          className: 'custom-searched-place-marker',
+          html: `
+            <div class="relative w-9 h-9">
+              <div class="absolute inset-0 rounded-full bg-rose-500/30 animate-ping"></div>
+              <div class="absolute inset-1 rounded-full bg-rose-500 border-2 border-white shadow-xl flex items-center justify-center">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="white"><path d="M12 2C8.1 2 5 5.1 5 9c0 5.2 7 13 7 13s7-7.8 7-13c0-3.9-3.1-7-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>
+              </div>
+            </div>
+          `,
+          iconSize: [36, 36],
+          iconAnchor: [18, 18],
+        });
+        searchMarkerRef.current = L.marker(DEFAULT_CENTER, { icon: searchIcon, interactive: false })
+          .addTo(map)
+          .setOpacity(0);
+
         mapInstanceRef.current = map;
 
         // The app-level locator (page.tsx) owns the first-open permission prompt;
@@ -178,9 +204,59 @@ export const CivicMap: React.FC<CivicMapProps> = ({
     if (userMarkerRef.current) {
       userMarkerRef.current.setLatLng([initialLocation.latitude, initialLocation.longitude]);
     }
+    if (searchMarkerRef.current) {
+      searchMarkerRef.current.setOpacity(0);
+    }
     mapInstanceRef.current.flyTo([initialLocation.latitude, initialLocation.longitude], 15, { duration: 1 });
     setGpsStatus(`Live · ${initialLocation.latitude.toFixed(4)}, ${initialLocation.longitude.toFixed(4)}`);
   }, [initialLocation]);
+
+  // Debounced place search — jump the camera to any location to view its issues
+  useEffect(() => {
+    const q = mapQuery.trim();
+    if (q.length < 3) {
+      setMapResults([]);
+      setMapSearching(false);
+      setMapShowResults(false);
+      return;
+    }
+    setMapSearching(true);
+    setMapSearchError(false);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(String(res.status));
+        const data = (await res.json()) as GeocodeResponse;
+        setMapResults(data.results || []);
+      } catch (err: any) {
+        if (err?.name === 'AbortError') return;
+        setMapSearchError(true);
+        setMapResults([]);
+      } finally {
+        if (!controller.signal.aborted) setMapSearching(false);
+      }
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [mapQuery]);
+
+  const flyToPlace = (hit: GeocodeHit) => {
+    const map = mapInstanceRef.current;
+    if (map) {
+      if (searchMarkerRef.current) {
+        searchMarkerRef.current.setLatLng([hit.lat, hit.lon]);
+        searchMarkerRef.current.setOpacity(1);
+      }
+      map.flyTo([hit.lat, hit.lon], 15, { duration: 1.2 });
+    }
+    setMapQuery(hit.label);
+    setMapResults([]);
+    setMapShowResults(false);
+    setActiveIssue(null);
+  };
 
   // Sync selected issue from prop
   useEffect(() => {
@@ -252,6 +328,9 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   }, [issues, onSelectIssue]);
 
   const recenterGPS = () => {
+    if (searchMarkerRef.current) {
+      searchMarkerRef.current.setOpacity(0);
+    }
     locateUser({ animate: true });
   };
 
@@ -335,6 +414,75 @@ export const CivicMap: React.FC<CivicMapProps> = ({
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Place search — jump to any location to browse its issues */}
+      <div className="absolute top-[5.2rem] md:top-[4.6rem] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-md md:w-80 pointer-events-auto">
+        <div className="flex items-center space-x-2 px-3 py-2.5 rounded-2xl border shadow-xl backdrop-blur-xl
+                        bg-white/95 border-slate-200 text-slate-700
+                        dark:bg-slate-950/95 dark:border-slate-800 dark:text-slate-200">
+          <Search className="w-4 h-4 text-slate-400 flex-shrink-0" />
+          <input
+            type="text"
+            value={mapQuery}
+            onChange={(e) => { setMapQuery(e.target.value); setMapShowResults(true); }}
+            onFocus={() => setMapShowResults(true)}
+            onBlur={() => setTimeout(() => setMapShowResults(false), 160)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && mapResults.length > 0) {
+                e.preventDefault();
+                flyToPlace(mapResults[0]);
+              } else if (e.key === 'Escape') {
+                setMapShowResults(false);
+              }
+            }}
+            placeholder="Search anywhere for issues…"
+            className="flex-1 min-w-0 bg-transparent text-xs sm:text-sm placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none"
+          />
+          {mapSearching && <Loader2 className="w-4 h-4 animate-spin text-sky-500 flex-shrink-0" />}
+          {mapQuery && !mapSearching && (
+            <button
+              type="button"
+              onClick={() => { setMapQuery(''); setMapResults([]); setMapShowResults(false); }}
+              className="flex-shrink-0 p-0.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800"
+              aria-label="Clear search"
+            >
+              <X className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+          )}
+        </div>
+
+        {mapShowResults && (mapSearching || mapSearchError || mapResults.length > 0 || mapQuery.trim().length >= 3) && (
+          <div className="mt-2 max-h-64 overflow-y-auto rounded-2xl border shadow-2xl backdrop-blur-xl
+                          bg-white/95 border-slate-200 text-slate-700
+                          dark:bg-slate-950/95 dark:border-slate-800 dark:text-slate-200">
+            {mapSearching ? (
+              <p className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 flex items-center space-x-2">
+                <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-500" />
+                <span>Searching places…</span>
+              </p>
+            ) : mapSearchError ? (
+              <p className="px-4 py-3 text-xs text-amber-600 dark:text-amber-400">Search unavailable — check your connection</p>
+            ) : mapResults.length === 0 ? (
+              <p className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400">No places found — try a different name</p>
+            ) : (
+              mapResults.map((hit, i) => (
+                <button
+                  key={`${hit.lat},${hit.lon},${i}`}
+                  type="button"
+                  onClick={() => flyToPlace(hit)}
+                  className="w-full text-left px-4 py-2.5 flex items-start space-x-2.5 transition hover:bg-slate-50 dark:hover:bg-slate-800"
+                >
+                  <MapPin className="w-4 h-4 mt-0.5 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">{hit.label}</span>
+                    {hit.sublabel && <span className="block text-[10px] text-slate-500 dark:text-slate-400 truncate">{hit.sublabel}</span>}
+                  </span>
+                </button>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* Live GPS status pill */}

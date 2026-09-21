@@ -78,6 +78,13 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'PIN Code',
     latLabel: 'LAT',
     lngLabel: 'LNG',
+    // Remote / typed location search
+    locSearchIntro: 'Search or type a location',
+    locSearchPlaceholder: 'Type a place, area, street or PIN code…',
+    locSearching: 'Searching places…',
+    locNoResults: 'No places found — check the name and try again',
+    locSearchError: 'Search unavailable — check your connection',
+    remotePinNote: 'Pin placed at the searched location — reporting remotely.',
   },
   hi: {
     appTitle: 'सिविक रिज़ॉल्व',
@@ -138,6 +145,13 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'पिन कोड',
     latLabel: 'अक्षांश',
     lngLabel: 'देशांतर',
+    // Remote / typed location search
+    locSearchIntro: 'स्थान खोजें या टाइप करें',
+    locSearchPlaceholder: 'कोई स्थान, क्षेत्र, सड़क या पिन कोड टाइप करें…',
+    locSearching: 'स्थान खोजा जा रहा है…',
+    locNoResults: 'कोई स्थान नहीं मिला — नाम जांचकर फिर प्रयास करें',
+    locSearchError: 'खोज उपलब्ध नहीं — कनेक्शन जांचें',
+    remotePinNote: 'पिन खोजे गए स्थान पर लगाया गया — दूर से रिपोर्ट हो रही है।',
   },
   ta: {
     appTitle: 'சிவிக் ரிசால்வ்',
@@ -198,6 +212,13 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'பின் குறியீடு',
     latLabel: 'LAT',
     lngLabel: 'LNG',
+    // Remote / typed location search
+    locSearchIntro: 'இடத்தை தேடவும் அல்லது தட்டச்சு செய்யவும்',
+    locSearchPlaceholder: 'இடம், பகுதி, தெரு அல்லது பின் குறியீட்டை தட்டச்சு செய்க…',
+    locSearching: 'இடங்களை தேடுகிறது…',
+    locNoResults: 'இடங்கள் எதுவும் கிடைக்கவில்லை — பெயரைச் சரிபார்த்து மீண்டும் முயற்சிக்கவும்',
+    locSearchError: 'தேடல் இல்லை — இணைப்பை சரிபார்க்கவும்',
+    remotePinNote: 'தேடிய இடத்தில் பின் வைக்கப்பட்டது — தொலைவிலிருந்து பதிவு செய்கிறது.',
   },
   te: {
     appTitle: 'సివిక్ రిజాల్వ్',
@@ -258,6 +279,13 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'పిన్ కోడ్',
     latLabel: 'LAT',
     lngLabel: 'LNG',
+    // Remote / typed location search
+    locSearchIntro: 'ప్రదేశం వెతకండి లేదా టైప్ చేయండి',
+    locSearchPlaceholder: 'ప్రదేశం, ప్రాంతం, వీధి లేదా పిన్ కోడ్ టైప్ చేయండి…',
+    locSearching: 'ప్రదేశాలను వెతుకుతోంది…',
+    locNoResults: 'ప్రదేశాలు కనుగొనబడలేదు — పేరు సరిచూసి మళ్లీ ప్రయత్నించండి',
+    locSearchError: 'శోధన అందుబాటులో లేదు — కనెక్షన్ తనిఖీ చేయండి',
+    remotePinNote: 'శోధించిన ప్రదేశంలో పిన్ ఉంచబడింది — సుదూరం నుండి నివేదిస్తోంది.',
   },
   kn: {
     appTitle: 'ಸಿವಿಕ್ ರಿಸಾಲ್ವ್',
@@ -318,6 +346,13 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'ಪಿನ್ ಕೋಡ್',
     latLabel: 'LAT',
     lngLabel: 'LNG',
+    // Remote / typed location search
+    locSearchIntro: 'ಸ್ಥಳವನ್ನು ಹುಡುಕಿ ಅಥವಾ ಟೈಪ್ ಮಾಡಿ',
+    locSearchPlaceholder: 'ಸ್ಥಳ, ಪ್ರದೇಶ, ಬೀದಿ ಅಥವಾ ಪಿನ್ ಕೋಡ್ ಟೈಪ್ ಮಾಡಿ…',
+    locSearching: 'ಸ್ಥಳಗಳನ್ನು ಹುಡುಕುತ್ತಿದೆ…',
+    locNoResults: 'ಯಾವುದೇ ಸ್ಥಳಗಳು ಸಿಗಲಿಲ್ಲ — ಹೆಸರನ್ನು ಪರಿಶೀಲಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ',
+    locSearchError: 'ಹುಡುಕಾಟ ಲಭ್ಯವಿಲ್ಲ — ಸಂಪರ್ಕ ಪರಿಶೀಲಿಸಿ',
+    remotePinNote: 'ಹುಡುಕಿದ ಸ್ಥಳದಲ್ಲಿ ಪಿನ್ ಇರಿಸಲಾಗಿದೆ — ದೂರದಿಂದ ವರದಿ ಮಾಡುತ್ತಿದೆ.',
   },
   bn: {
     appTitle: 'সিভিক রিজলভ',
@@ -378,6 +413,13 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'পিন কোড',
     latLabel: 'LAT',
     lngLabel: 'LNG',
+    // Remote / typed location search
+    locSearchIntro: 'স্থান খুঁজুন বা টাইপ করুন',
+    locSearchPlaceholder: 'স্থান, এলাকা, রাস্তা বা পিন কোড টাইপ করুন…',
+    locSearching: 'স্থান খুঁজছে…',
+    locNoResults: 'কোনো স্থান পাওয়া যায়নি — নাম পরীক্ষা করে আবার চেষ্টা করুন',
+    locSearchError: 'অনুসন্ধান উপলব্ধ নেই — সংযোগ পরীক্ষা করুন',
+    remotePinNote: 'অনুসন্ধানকৃত স্থানে পিন বসানো হয়েছে — দূর থেকে রিপোর্ট করা হচ্ছে।',
   },
   mr: {
     appTitle: 'सिव्हिक रिझॉल्व्ह',
@@ -438,6 +480,13 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'पिन कोड',
     latLabel: 'LAT',
     lngLabel: 'LNG',
+    // Remote / typed location search
+    locSearchIntro: 'ठिकाण शोधा किंवा टाइप करा',
+    locSearchPlaceholder: 'ठिकाण, परिसर, रस्ता किंवा पिन कोड टाइप करा…',
+    locSearching: 'ठिकाणे शोधत आहे…',
+    locNoResults: 'ठिकाणे सापडली नाहीत — नाव तपासून पुन्हा प्रयत्न करा',
+    locSearchError: 'शोध उपलब्ध नाही — कनेक्शन तपासा',
+    remotePinNote: 'शोधलेल्या ठिकाणी पिन ठेवला आहे — दूरून नोंदवत आहे.',
   },
   gu: {
     appTitle: 'સિવિક રિઝોલ્વ',
@@ -498,5 +547,12 @@ export const TRANSLATIONS: Record<SupportedLanguage, Record<string, string>> = {
     pincode: 'પિન કોડ',
     latLabel: 'LAT',
     lngLabel: 'LNG',
+    // Remote / typed location search
+    locSearchIntro: 'સ્થળ શોધો અથવા ટાઇપ કરો',
+    locSearchPlaceholder: 'સ્થળ, વિસ્તાર, શેરી અથવા પિન કોડ ટાઇપ કરો…',
+    locSearching: 'સ્થળો શોધી રહ્યા છીએ…',
+    locNoResults: 'કોઈ સ્થળ મળ્યું નથી — નામ તપાસીને ફરી પ્રયાસ કરો',
+    locSearchError: 'શોધ ઉપલબ્ધ નથી — કનેક્શન તપાસો',
+    remotePinNote: 'શોધેલા સ્થળ પર પિન મૂકવામાં આવી — દૂરથી રિપોર્ટ કરી રહ્યા છીએ.',
   },
 };
