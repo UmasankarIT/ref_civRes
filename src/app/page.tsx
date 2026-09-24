@@ -267,6 +267,7 @@ export default function HomePage() {
         onAuthClick={() => setIsAuthModalOpen(true)}
         onLogout={handleLogout}
         unreadNotifications={notificationsUnread}
+        onNotificationsRead={refreshNotifications}
         stats={{ totalActive, inProgress, resolved }}
       />
 
@@ -314,7 +315,10 @@ export default function HomePage() {
 
       {/* Main Viewport Container */}
       <div className="flex-1 flex flex-col relative">
-        {activeTab === 'map' && (
+        {/* Map stays mounted permanently (hidden when another tab is active) so
+            its camera position, zoom and markers persist across tab switches
+            instead of rebuilding from scratch on every visit. */}
+        <div className={activeTab === 'map' ? 'flex-1 flex flex-col' : 'hidden flex-1 flex-col'}>
           <CivicMap
             issues={filteredMapIssues}
             categories={categories}
@@ -327,7 +331,7 @@ export default function HomePage() {
             initialLocation={userLocation}
             locationStatus={locStatus}
           />
-        )}
+        </div>
 
         {activeTab === 'feed' && (
           <IssueFeed

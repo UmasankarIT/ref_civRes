@@ -67,6 +67,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
   const [mapSearching, setMapSearching] = useState<boolean>(false);
   const [mapSearchError, setMapSearchError] = useState<boolean>(false);
   const [mapShowResults, setMapShowResults] = useState<boolean>(false);
+  const [mapReady, setMapReady] = useState<boolean>(false);
 
   // Locate the citizen with live GPS and move the radar marker to their real position.
   // The map is created at the neutral India-centre fallback, then flies to the citizen
@@ -174,6 +175,13 @@ export const CivicMap: React.FC<CivicMapProps> = ({
 
         mapInstanceRef.current = map;
 
+        // Signal that Leaflet is ready so the centering-on-initialLocation
+        // effect can re-fire. This matters when switching away from the map
+        // tab and back: the component remounts, but initialLocation never
+        // changes afterwards, so without this the map stays at the default
+        // India-centre instead of returning to the citizen's position.
+        if (isMounted) setMapReady(true);
+
         // Some engines hand Leaflet a stale container size (e.g. 0px) at mount
         // inside flex/viewport layouts; re-measure once the frame paints so the
         // tiles always render, and keep the map synced if the container resizes
@@ -221,9 +229,11 @@ export const CivicMap: React.FC<CivicMapProps> = ({
     };
   }, [locateUser]);
 
-  // Centre the map on the citizen's location once the app-level GPS fix arrives
+  // Centre the map on the citizen's location once the app-level GPS fix arrives.
+  // Also re-checks when the Leaflet instance first becomes ready, so returning
+  // to the map tab restores the last known position instead of the default.
   useEffect(() => {
-    if (typeof window === 'undefined' || !mapInstanceRef.current || !initialLocation) return;
+    if (typeof window === 'undefined' || !mapInstanceRef.current || !mapReady || !initialLocation) return;
     if (userMarkerRef.current) {
       userMarkerRef.current.setLatLng([initialLocation.latitude, initialLocation.longitude]);
     }
@@ -232,7 +242,7 @@ export const CivicMap: React.FC<CivicMapProps> = ({
     }
     mapInstanceRef.current.flyTo([initialLocation.latitude, initialLocation.longitude], 15, { duration: 1 });
     setGpsStatus(`Live · ${initialLocation.latitude.toFixed(4)}, ${initialLocation.longitude.toFixed(4)}`);
-  }, [initialLocation]);
+  }, [initialLocation, mapReady]);
 
   // Debounced place search — jump the camera to any location to view its issues
   useEffect(() => {
@@ -291,17 +301,38 @@ export const CivicMap: React.FC<CivicMapProps> = ({
     setActiveIssue(null);
   };
 
-  // Sync selected issue from prop
+  // Sync selected issue from prop. The map is kept mounted (hidden) across tab
+  // switches, so before flying we must re-measure the just-unhidden container and
+  // defend against NaN/leaflet animation errors — otherwise Leaflet throws an
+  // unhandled exception that blanks the whole app.
   useEffect(() => {
-    if (selectedIssueId) {
-      const match = issues.find((i) => i.id === selectedIssueId);
-      if (match) {
-        setActiveIssue(match);
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.flyTo([match.latitude, match.longitude], 16, { duration: 1.2 });
-        }
-      }
+    if (!selectedIssueId) return;
+    if (typeof window === 'undefined') return;
+    const match = issues.find((i) => i.id === selectedIssueId);
+    if (!match) return;
+    setActiveIssue(match);
+
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const lat = Number(match.latitude);
+    const lng = Number(match.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+
+    try {
+      map.invalidateSize();
+    } catch (err) {
+      console.error('Failed to re-measure map before flyTo:', err);
     }
+
+    requestAnimationFrame(() => {
+      const mapRef = mapInstanceRef.current;
+      if (!mapRef) return;
+      try {
+        mapRef.flyTo([lat, lng], 16, { duration: 1.2 });
+      } catch (err) {
+        console.error('Failed to fly to selected issue:', err);
+      }
+    });
   }, [selectedIssueId, issues]);
 
   // Update Markers
