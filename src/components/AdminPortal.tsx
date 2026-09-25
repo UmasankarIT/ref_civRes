@@ -17,6 +17,8 @@ import {
   Mic,
   Loader2,
   RefreshCw,
+  MapPinned,
+  Sparkles,
 } from 'lucide-react';
 
 interface AdminPortalProps {
@@ -35,13 +37,14 @@ interface AdminPortalProps {
   onMerge: (secondaryId: string, primaryId: string) => Promise<void>;
 }
 
-type Section = 'triage' | 'dispatch' | 'departments' | 'analytics';
+type Section = 'triage' | 'dispatch' | 'departments' | 'analytics' | 'policymaker';
 
 const SECTIONS: { key: Section; label: string; icon: React.ReactNode }[] = [
   { key: 'triage', label: 'Triage', icon: <Search className="w-4 h-4" /> },
   { key: 'dispatch', label: 'Dispatch', icon: <Send className="w-4 h-4" /> },
   { key: 'departments', label: 'Departments', icon: <Building2 className="w-4 h-4" /> },
   { key: 'analytics', label: 'Analytics', icon: <BarChart3 className="w-4 h-4" /> },
+  { key: 'policymaker', label: 'Policymaker', icon: <MapPinned className="w-4 h-4" /> },
 ];
 
 const DEPT_WORKERS: Record<string, string[]> = {
@@ -65,10 +68,53 @@ type AnalyticsData = {
   recentAudit: { id: string; actorName: string; role: string; action: string; detail: string; createdAt: string }[];
 };
 
+type Hotspot = {
+  id: string;
+  centroidLat: number;
+  centroidLng: number;
+  issueCount: number;
+  totalUpvotes: number;
+  avgPriority: number;
+  avgSeverity: number;
+  topCategories: { id: string; name: string; count: number }[];
+  leadingIssueId: string;
+  leadingIssueTitle: string;
+  areaName: string;
+  demandScore: number;
+  radiusMeters: number;
+};
+
+type Recommendation = {
+  rank: number;
+  title: string;
+  hotspotId: string;
+  category: string;
+  department: string;
+  demandScore: number;
+  rationale: string;
+  estimatedImpact: string;
+  indicativeInvestment: string;
+  priority: string;
+};
+
+type CategoryDemandRow = { id: string; name: string; openCount: number; totalUpvotes: number; avgSeverity: number };
+
+type HotspotsData = {
+  generatedAt: string;
+  mode: 'gemini' | 'heuristic';
+  dataSources: string[];
+  counts: { totalOpen: number; totalResolved: number; totalUpvotes: number; hotspotCount: number };
+  hotspots: Hotspot[];
+  recommendations: Recommendation[];
+  categoryDemand: CategoryDemandRow[];
+};
+
 export const AdminPortal: React.FC<AdminPortalProps> = ({ user, issues, categories, onStatusUpdate, onMerge }) => {
   const [section, setSection] = useState<Section>('triage');
   const [departments, setDepartments] = useState<Department[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
+  const [hotspotsData, setHotspotsData] = useState<HotspotsData | null>(null);
+  const [hotspotsLoading, setHotspotsLoading] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const loadDepartments = useCallback(async () => {
@@ -95,6 +141,18 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ user, issues, categori
     }
   }, []);
 
+  const loadHotspots = useCallback(async () => {
+    setHotspotsLoading(true);
+    try {
+      const res = await fetch('/api/admin/hotspots', { cache: 'no-store' });
+      if (res.ok) setHotspotsData(await res.json());
+    } catch {
+      // ignore
+    } finally {
+      setHotspotsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadDepartments();
   }, [loadDepartments]);
@@ -102,7 +160,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ user, issues, categori
   useEffect(() => {
     if (section === 'departments') loadDepartments();
     if (section === 'analytics') loadAnalytics();
-  }, [section, loadDepartments, loadAnalytics]);
+    if (section === 'policymaker') loadHotspots();
+  }, [section, loadDepartments, loadAnalytics, loadHotspots]);
 
   const activeIssues = issues.filter((i) => i.status !== 'merged');
 
@@ -116,16 +175,24 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ user, issues, categori
           </p>
         </div>
         <button
-          onClick={() => (section === 'analytics' ? loadAnalytics() : section === 'departments' ? loadDepartments() : undefined)}
+          onClick={() =>
+            section === 'analytics'
+              ? loadAnalytics()
+              : section === 'departments'
+                ? loadDepartments()
+                : section === 'policymaker'
+                  ? loadHotspots()
+                  : undefined
+          }
           className="flex items-center space-x-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-bold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          <RefreshCw className={`w-3.5 h-3.5 ${loading || hotspotsLoading ? 'animate-spin' : ''}`} />
           <span>Refresh</span>
         </button>
       </div>
 
       {/* Section tabs */}
-      <div className="grid grid-cols-4 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 text-xs font-bold">
+      <div className="grid grid-cols-5 p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/80 text-xs font-bold">
         {SECTIONS.map(({ key, label, icon }) => (
           <button
             key={key}
@@ -159,6 +226,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ user, issues, categori
       )}
       {section === 'analytics' && (
         <AnalyticsSection analytics={analytics} issues={issues} />
+      )}
+      {section === 'policymaker' && (
+        <PolicymakerSection data={hotspotsData} loading={hotspotsLoading} />
       )}
     </div>
   );
@@ -621,6 +691,162 @@ function AnalyticsSection({ analytics, issues }: { analytics: AnalyticsData | nu
                 <span className="shrink-0 text-[10px] text-slate-400">
                   {a.actorName} · {new Date(a.createdAt).toLocaleTimeString()}
                 </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Policymaker — AI Demand Intelligence dashboard                       */
+/* ------------------------------------------------------------------ */
+
+const PRIORITY_STYLES: Record<string, string> = {
+  high: 'bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300',
+  medium: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  low: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+};
+
+function ScoreBar({ score }: { score: number }) {
+  const hue = score >= 70 ? 'bg-rose-500' : score >= 40 ? 'bg-amber-500' : 'bg-emerald-500';
+  return (
+    <div className="h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
+      <div className={`h-full rounded-full ${hue}`} style={{ width: `${Math.max(4, score)}%` }} />
+    </div>
+  );
+}
+
+function PolicymakerSection({ data, loading }: { data: HotspotsData | null; loading: boolean }) {
+  if (loading && !data) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center flex items-center justify-center space-x-2">
+        <Loader2 className="w-5 h-5 animate-spin text-emerald-500" />
+        <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Computing demand hotspots…</p>
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="rounded-3xl border border-dashed border-slate-300 dark:border-slate-700 p-10 text-center">
+        <MapPinned className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-600" />
+        <p className="mt-3 text-sm font-semibold">No demand data yet</p>
+        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          Reports submitted by citizens are clustered into hotspots here, then ranked into recommended public projects.
+        </p>
+      </div>
+    );
+  }
+
+  const topCategory = data.categoryDemand[0];
+  const kpis = [
+    { label: 'Open work orders', value: data.counts.totalOpen },
+    { label: 'Demand hotspots', value: data.counts.hotspotCount },
+    { label: 'Community upvotes', value: data.counts.totalUpvotes },
+    { label: 'Top pressure point', value: topCategory?.name || '—' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      {/* Header + AI mode chip */}
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] text-slate-400">
+          Fusing live citizen grievances with contextual municipal data. Generated {new Date(data.generatedAt).toLocaleString()}.
+        </p>
+        <span
+          className={`shrink-0 inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold ${
+            data.mode === 'gemini'
+              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300'
+              : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
+          }`}
+        >
+          {data.mode === 'gemini' ? <Sparkles className="w-3.5 h-3.5" /> : <MapPinned className="w-3.5 h-3.5" />}
+          <span>{data.mode === 'gemini' ? 'Gemini ranked' : 'Heuristic ranking'}</span>
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {kpis.map((k) => (
+          <div key={k.label} className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+            <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold truncate">{k.label}</p>
+            <p className="mt-1 text-xl font-bold text-slate-900 dark:text-white truncate">{k.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {data.recommendations.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="flex items-center space-x-2">
+            <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Recommended priority projects
+            </h3>
+          </div>
+          {data.recommendations.map((r) => (
+            <article key={`rec-${r.rank}`} className="rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+              <div className="flex items-start gap-3">
+                <span className="w-8 h-8 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                  {r.rank}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h4 className="text-sm font-bold leading-snug">{r.title}</h4>
+                    <span className={`shrink-0 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase ${PRIORITY_STYLES[r.priority] || PRIORITY_STYLES.low}`}>
+                      {r.priority}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                    {r.department} · hotlink {r.hotspotId} · demand {r.demandScore}/100
+                  </p>
+                  <div className="mt-2.5"><ScoreBar score={r.demandScore} /></div>
+                  <p className="mt-2.5 text-xs text-slate-600 dark:text-slate-300">{r.rationale}</p>
+                  <p className="mt-1 text-[11px] text-emerald-700 dark:text-emerald-300">{r.estimatedImpact}</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-bold">
+                    <span className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">Est. {r.indicativeInvestment}</span>
+                    <span className="px-2 py-1 rounded-lg bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300">{r.category}</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {data.hotspots.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="flex items-center space-x-2">
+            <MapPinned className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Demand hotspots</h3>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {data.hotspots.map((h) => (
+              <div key={h.id} className="p-4 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h4 className="text-sm font-bold truncate">{h.areaName}</h4>
+                    <p className="text-[10px] font-mono text-slate-400">
+                      {h.centroidLat.toFixed(4)}, {h.centroidLng.toFixed(4)} · r{h.radiusMeters}m
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-sm font-bold text-slate-900 dark:text-white">{h.demandScore}</span>
+                </div>
+                <div className="mt-2"><ScoreBar score={h.demandScore} /></div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                  <span className="font-bold text-slate-700 dark:text-slate-200">{h.issueCount} issues</span>
+                  <span>{h.totalUpvotes} upvotes</span>
+                  <span>P{h.avgPriority.toFixed(1)}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {h.topCategories.map((c) => (
+                    <span key={c.id} className="px-2 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                      {c.name} ×{c.count}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500 dark:text-slate-400 truncate">{h.leadingIssueTitle}</p>
               </div>
             ))}
           </div>

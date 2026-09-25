@@ -11,8 +11,8 @@ export async function GET(req: NextRequest) {
     const department = searchParams.get('department');
     const search = searchParams.get('search')?.toLowerCase();
 
-    let issues = civicStore.getIssues();
-    const categories = civicStore.getCategories();
+    let issues = await civicStore.getIssues();
+    const categories = await civicStore.getCategories();
 
     if (categoryId && categoryId !== 'all') {
       issues = issues.filter((i) => i.categoryId === categoryId || i.category.code === categoryId);

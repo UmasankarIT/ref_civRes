@@ -20,7 +20,7 @@ export async function POST(
     if (!user) return unauthorized('Sign in to request a reassignment.');
     if (!isRole(user, 'department')) return denied('Only field staff can request reassignment.');
 
-    const issue = civicStore.getIssueById(params.id);
+    const issue = await civicStore.getIssueById(params.id);
     if (!issue) return NextResponse.json({ error: 'Issue not found.' }, { status: 404 });
 
     if (issue.departmentId && issue.departmentId !== user.departmentId) {
@@ -33,15 +33,15 @@ export async function POST(
       return NextResponse.json({ error: 'Please provide a reason for the reassignment request.' }, { status: 400 });
     }
 
-    const updated = civicStore.requestReassign(issue.id, {
+    const updated = await civicStore.requestReassign(issue.id, {
       byDepartment: user.departmentId || 'unknown',
       reason,
       at: new Date().toISOString(),
     });
     if (!updated) return NextResponse.json({ error: 'Issue not found.' }, { status: 404 });
 
-    logAction(user, 'dispatch.reassign-request', `Reassignment requested for ${issue.id}: ${reason}`, issue.id);
-    notifyUser(CITY_ADMIN_USER_ID, 'Reassignment requested', `${user.name} requested re-routing of ${issue.id}: ${reason}`, issue.id);
+    await logAction(user, 'dispatch.reassign-request', `Reassignment requested for ${issue.id}: ${reason}`, issue.id);
+    await notifyUser(CITY_ADMIN_USER_ID, 'Reassignment requested', `${user.name} requested re-routing of ${issue.id}: ${reason}`, issue.id);
 
     return NextResponse.json({ issue: updated, message: 'Reassignment request sent to the city admin.' });
   } catch (error: unknown) {

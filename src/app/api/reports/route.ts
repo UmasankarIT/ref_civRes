@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { civicStore } from '@/lib/store';
 import { findNearbyActiveIssue, generateMockAddress, calculateGeodesicDistanceMeters } from '@/lib/spatial';
 import { calculatePriorityScore } from '@/lib/scoring';
-import { analyzeIssueImage } from '@/lib/mlVision';
+import { analyzeReportPhoto } from '@/lib/gemini';
 import { CreateReportRequest, Issue, IssueReport } from '@/lib/types';
 import { getSession, unauthorized } from '@/lib/auth';
 import { departmentForCategory } from '@/lib/departments';
@@ -28,7 +28,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const category = civicStore.getCategoryById(body.categoryId);
+    const latitude = Number(body.latitude);
+    const longitude = Number(body.longitude);
+    if (
+      !Number.isFinite(latitude) ||
+      !Number.isFinite(longitude) ||
+      latitude < -90 ||
+      latitude > 90 ||
+      longitude < -180 ||
+      longitude > 180
+    ) {
+      return NextResponse.json(
+        { error: 'Invalid coordinates. Confirm the location on the map and try again.' },
+        { status: 400 }
+      );
+    }
+    body.latitude = latitude;
+    body.longitude = longitude;
+
+    const category = await civicStore.getCategoryById(body.categoryId);
     if (!category) {
       return NextResponse.json({ error: 'Invalid category specified.' }, { status: 400 });
     }
@@ -50,8 +68,14 @@ export async function POST(req: NextRequest) {
       exif.isSpoofed = delta > 300;
     }
 
-    // 2. Run Computer Vision Pipeline for Categorization and Severity Assessment
-    const mlAnalysis = await analyzeIssueImage(body.imageUrl, category.code, body.citizenNotes);
+    // 2. Run the Computer Vision pipeline for categorization and severity.
+    // Uses Google Gemini when GEMINI_API_KEY is configured (engine='gemini'),
+    // else falls back to the deterministic keyword classifier.
+    const { analysis: mlAnalysis, engine: visionEngine } = await analyzeReportPhoto(
+      body.imageUrl,
+      category.code,
+      body.citizenNotes
+    );
 
     if (!mlAnalysis.isCivicIssue) {
       return NextResponse.json(
@@ -64,7 +88,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. PostGIS ST_DWithin Geodesic Deduplication Check (25m threshold)
-    const activeIssues = civicStore.getIssues();
+    const activeIssues = await civicStore.getIssues();
     const match = findNearbyActiveIssue(body.latitude, body.longitude, category.id, activeIssues, 25.0);
 
     const reportId = `rep-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
@@ -90,11 +114,18 @@ export async function POST(req: NextRequest) {
         createdAt: new Date().toISOString(),
       };
 
-      // Add to store & atomically recalculate priority
-      civicStore.addReport(report);
-      const updatedIssue = civicStore.incrementIssueReport(existingIssue.id, report);
-
-      logAction(user, 'reports.submit.duplicate', `Matched existing incident ${existingIssue.id} within ${match.distanceMeters}m.`, existingIssue.id);
+      // Add report + recalculate priority atomically (single DB transaction)
+      const updatedIssue = await civicStore.withTransaction(async () => {
+        await civicStore.addReport(report);
+        const updated = await civicStore.incrementIssueReport(existingIssue.id, report);
+        await logAction(
+          user,
+          'reports.submit.duplicate',
+          `Matched existing incident ${existingIssue.id} within ${match.distanceMeters}m.`,
+          existingIssue.id
+        );
+        return updated;
+      });
 
       return NextResponse.json({
         issueId: existingIssue.id,
@@ -165,16 +196,18 @@ export async function POST(req: NextRequest) {
       mlAnalysis,
     };
 
-    civicStore.addIssue(newIssue);
-    civicStore.addReport(newReport);
-
-    logAction(user, 'reports.submit', `${category.name} routed to ${dept.name}.`, issueId);
-    notifyUser(
-      CITY_ADMIN_USER_ID,
-      'New report in triage',
-      `${category.name} near ${newIssue.formattedAddress} — routed to ${dept.name}.`,
-      issueId
-    );
+    // Persist issue + first report + audit + admin ping in one transaction
+    await civicStore.withTransaction(async () => {
+      await civicStore.addIssue(newIssue);
+      await civicStore.addReport(newReport);
+      await logAction(user, 'reports.submit', `${category.name} routed to ${dept.name}.`, issueId);
+      await notifyUser(
+        CITY_ADMIN_USER_ID,
+        'New report in triage',
+        `${category.name} near ${newIssue.formattedAddress} — routed to ${dept.name}.`,
+        issueId
+      );
+    });
 
     return NextResponse.json({
       issueId,

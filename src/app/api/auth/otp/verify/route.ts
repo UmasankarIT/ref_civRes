@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
 
     const user = createCitizenUser(phone, body.displayName);
     const token = await signSession(user);
-    civicStore.addAuditLog({
+    await civicStore.addAuditLog({
       id: `log-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       actorId: user.userId,
       actorName: user.name,

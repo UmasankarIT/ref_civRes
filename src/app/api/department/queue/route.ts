@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   if (!isRole(user, 'department')) return denied('Only department staff can view their queue.');
 
   const departmentId = user.departmentId;
-  const queue = civicStore.getAssignableForDepartment(departmentId || '').filter((i) => {
+  const queue = (await civicStore.getAssignableForDepartment(departmentId || '')).filter((i) => {
     if (user.jurisdictionCode && i.jurisdictionCode && i.jurisdictionCode !== user.jurisdictionCode) return false;
     return true;
   });

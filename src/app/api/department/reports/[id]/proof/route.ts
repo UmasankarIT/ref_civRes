@@ -21,7 +21,7 @@ export async function POST(
     if (!user) return unauthorized('Sign in to submit proof of work.');
     if (!isRole(user, 'department')) return denied('Only field staff submit proof of work.');
 
-    const issue = civicStore.getIssueById(params.id);
+    const issue = await civicStore.getIssueById(params.id);
     if (!issue) return NextResponse.json({ error: 'Issue not found.' }, { status: 404 });
 
     if (issue.departmentId && issue.departmentId !== user.departmentId) {
@@ -53,13 +53,13 @@ export async function POST(
       submittedAt: new Date().toISOString(),
     };
 
-    civicStore.addProofOfWork(proof);
+    await civicStore.addProofOfWork(proof);
 
-    logAction(user, 'proof.upload', `Proof of work uploaded for ${issue.id}.`, issue.id);
+    await logAction(user, 'proof.upload', `Proof of work uploaded for ${issue.id}.`, issue.id);
     if (issue.citizenUserId) {
-      notifyUser(issue.citizenUserId, 'Proof of work uploaded', 'Field staff uploaded the after-photo for your report — resolution is being finalised.', issue.id);
+      await notifyUser(issue.citizenUserId, 'Proof of work uploaded', 'Field staff uploaded the after-photo for your report — resolution is being finalised.', issue.id);
     }
-    notifyUser(CITY_ADMIN_USER_ID, 'Proof of work pending review', `${proof.submittedBy} uploaded proof for ${issue.id}.`, issue.id);
+    await notifyUser(CITY_ADMIN_USER_ID, 'Proof of work pending review', `${proof.submittedBy} uploaded proof for ${issue.id}.`, issue.id);
 
     return NextResponse.json({
       proof,

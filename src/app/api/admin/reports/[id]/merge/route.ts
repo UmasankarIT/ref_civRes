@@ -21,21 +21,21 @@ export async function POST(
       return NextResponse.json({ error: 'primaryIssueId is required.' }, { status: 400 });
     }
 
-    const merged = civicStore.mergeIssue(params.id, primaryId);
+    const merged = await civicStore.mergeIssue(params.id, primaryId);
     if (!merged) {
       return NextResponse.json({ error: 'Could not merge — check both issue ids.' }, { status: 400 });
     }
 
-    logAction(user, 'reports.merge', `Merged ${params.id} into ${primaryId} (duplicate).`, primaryId);
+    await logAction(user, 'reports.merge', `Merged ${params.id} into ${primaryId} (duplicate).`, primaryId);
 
-    const secondary = civicStore.getIssueById(params.id);
+    const secondary = await civicStore.getIssueById(params.id);
     if (secondary?.citizenUserId) {
-      notifyUser(secondary.citizenUserId, 'Your report was merged', `Your report was merged into ticket ${primaryId} as a duplicate. You are still subscribed to updates.`, primaryId);
+      await notifyUser(secondary.citizenUserId, 'Your report was merged', `Your report was merged into ticket ${primaryId} as a duplicate. You are still subscribed to updates.`, primaryId);
     }
 
     return NextResponse.json({
       message: `Issue ${params.id} merged into ${primaryId}.`,
-      primary: civicStore.getIssueById(primaryId),
+      primary: await civicStore.getIssueById(primaryId),
     });
   } catch (error: unknown) {
     console.error('Error merging reports:', error);

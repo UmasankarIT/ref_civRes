@@ -1,13 +1,13 @@
 import { AuthUser, AppNotification } from './types';
 import { civicStore } from './store';
 
-export function logAction(
+export async function logAction(
   actor: AuthUser,
   action: string,
   detail: string,
   issueId?: string
-): void {
-  civicStore.addAuditLog({
+): Promise<void> {
+  await civicStore.addAuditLog({
     id: `log-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
     actorId: actor.userId,
     actorName: actor.name,
@@ -19,12 +19,12 @@ export function logAction(
   });
 }
 
-export function notifyUser(
+export async function notifyUser(
   userId: string,
   title: string,
   body: string,
   issueId?: string
-): void {
+): Promise<void> {
   const n: AppNotification = {
     id: `not-${Date.now()}-${Math.floor(Math.random() * 100000)}`,
     userId,
@@ -34,5 +34,5 @@ export function notifyUser(
     read: false,
     createdAt: new Date().toISOString(),
   };
-  civicStore.pushNotification(n);
+  await civicStore.pushNotification(n);
 }

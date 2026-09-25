@@ -1,0 +1,54 @@
+The Problem:
+Governments across India struggle to consolidate citizen feedback and align it with national infrastructure priorities. Development requests live in fragmented systems, leading to misaligned public spending, unaddressed infrastructure gaps, and no way to measure the impact of large-scale digital public infrastructure initiatives.
+
+The Challenge
+Build a scalable, multilingual AI platform — designed as a Digital Public Good — that aggregates citizen development requests via voice, text, and messaging apps across diverse linguistic regions of India. The system should analyse large datasets combining citizen feedback with national demographic data, infrastructure indices, and public investment plans, surfacing demand hotspots and recommending high-priority development projects to national policymakers.
+
+
+Tools & tech to build with: 
+
+All solutions must integrate Google AI. The following are recommended and fully supported:
+
+Generative AI & agents:
+Gemini API, Google AI Studio, Vertex AI
+
+Predictive modelling:
+Vertex AI (AutoML, custom training, model serving)
+
+Vision & multimodal:
+Gemini multimodal, Vertex AI Vision (for citizen photo analysis, crop disease detection, pollution monitoring)
+
+Language & voice:
+Cloud Speech-to-Text and Text-to-Speech, Translation API, Dialogflow (for multilingual and voice-first interfaces across India's linguistic regions)
+
+Geospatial:
+Google Maps Platform, Google Earth Engine (for satellite imagery in climate and agriculture tracks)
+
+Data & backend:
+BigQuery (for large-scale national datasets), Firebase (auth, real-time DB, rapid prototyping), Cloud Run / Cloud Functions
+
+Public data:
+data.gov.in and Indian government open data portals, FAO agricultural datasets, WHO health data, ISRO/Bhuvan satellite data, IMD and national meteorological services.
+
+
+Evaluation parameters:
+
+20%
+Problem-Solution Fit
+Does it directly and specifically address the stated challenge?
+
+25%
+AI/Technical Execution
+Is Google AI doing meaningful work? Does the prototype function end-to-end?
+
+20%
+Depth & Reach Across India
+Can this realistically scale from one city or state to communities across India?
+
+15%
+Impact Potential
+Scale of benefit — how many people, across how many states, how meaningfully?
+
+20%
+Deployability & Scalability
+Could this be piloted within a ministry or across states in weeks?

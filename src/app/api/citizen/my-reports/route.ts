@@ -10,6 +10,6 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized('Sign in to view your reports.');
   if (!isRole(user, 'citizen')) return denied('Only citizens have personal report history.');
 
-  const reports = civicStore.getIssuesForCitizen(user.userId);
+  const reports = await civicStore.getIssuesForCitizen(user.userId);
   return NextResponse.json({ reports });
 }

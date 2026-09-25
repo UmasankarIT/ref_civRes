@@ -1,0 +1,39 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: civicresolve
+  annotations:
+    run.googleapis.com/launchStage: GA
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '0'
+        autoscaling.knative.dev/maxScale: '10'
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 120
+      containers:
+        - image: gcr.io/YOUR_PROJECT_ID/civicresolve:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: civicresolve-db
+                  key: latest
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: civicresolve-gemini
+                  key: latest
+            - name: CIVRES_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: civicresolve-jwt
+                  key: latest
+          resources:
+            limits:
+              cpu: '1'
+              memory: 1Gi

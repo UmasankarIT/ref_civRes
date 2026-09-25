@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const user = await getSession(req);
   if (!user) return unauthorized('Sign in to view notifications.');
 
-  const notifications = civicStore.getNotificationsForUser(user.userId);
+  const notifications = await civicStore.getNotificationsForUser(user.userId);
   const unread = notifications.filter((n) => !n.read).length;
   return NextResponse.json({ notifications, unread });
 }
@@ -19,6 +19,6 @@ export async function POST(req: NextRequest) {
   const user = await getSession(req);
   if (!user) return unauthorized('Sign in to update notifications.');
 
-  civicStore.markNotificationsRead(user.userId);
+  await civicStore.markNotificationsRead(user.userId);
   return NextResponse.json({ ok: true });
 }

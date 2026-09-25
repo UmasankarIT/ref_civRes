@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized('Sign in to manage departments.');
   if (!isRole(user, 'city_admin')) return denied('Only the city admin can manage departments.');
 
-  return NextResponse.json({ departments: civicStore.getDepartments() });
+  return NextResponse.json({ departments: await civicStore.getDepartments() });
 }
 
 /** POST /api/admin/departments — create or update a department (Tier 3). */
@@ -37,8 +37,8 @@ export async function POST(req: NextRequest) {
     categoryCodes: Array.isArray(body.categoryCodes) ? body.categoryCodes : [],
   };
 
-  const saved = civicStore.upsertDepartment(dept);
-  logAction(user, 'departments.update', `${dept.disabled ? 'Disabled' : 'Updated'} department ${dept.name}.`);
+  const saved = await civicStore.upsertDepartment(dept);
+  await logAction(user, 'departments.update', `${dept.disabled ? 'Disabled' : 'Updated'} department ${dept.name}.`);
 
   return NextResponse.json({ department: saved, message: 'Department saved.' });
 }

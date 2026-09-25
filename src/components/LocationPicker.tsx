@@ -23,12 +23,15 @@ import { SupportedLanguage, TRANSLATIONS } from '@/lib/languages';
 const DEFAULT_LAT = 20.5937;
 const DEFAULT_LNG = 78.9629;
 
+export type LocationSource = 'gps' | 'initial' | 'search' | 'manual';
+
 export interface LocationData {
   latitude: number;
   longitude: number;
   accuracyMeters: number;
   isOnSite: boolean;
   locationDetails?: LocationDetails;
+  source: LocationSource | null;
 }
 
 interface LocationPickerProps {
@@ -72,6 +75,10 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
   // even when the reverse-geocode resolves after the position callback.
   const detailsRef = useRef<LocationDetails | null>(null);
   const lastPosRef = useRef({ lat: DEFAULT_LAT, lng: DEFAULT_LNG, acc: 10, onSite: true });
+  // Where the current pin came from. Stays null until GPS succeeds or the
+  // citizen deliberately picks a spot, so a report can never be filed at the
+  // neutral default coordinate (geographic centre of India) by accident.
+  const sourceRef = useRef<LocationSource | null>(null);
   // Once the citizen picks a location themselves (typed search or manual coords),
   // that choice is FINAL — a late GPS callback must never override it.
   const manualOverrideRef = useRef<boolean>(false);
@@ -85,6 +92,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
         accuracyMeters: pos.acc,
         isOnSite: pos.onSite,
         locationDetails: (details !== undefined ? details : detailsRef.current) ?? undefined,
+        source: sourceRef.current,
       });
     },
     [onLocationResolved]
@@ -163,6 +171,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
 
         updatePin(latitude, longitude, acc, true);
         setIsManualOverride(false);
+        sourceRef.current = 'gps';
 
         // Emit immediately with whatever admin details are known, then refresh them
         emitLocation(detailsRef.current);
@@ -211,6 +220,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       );
       setDeviceCoords({ lat: initialLocation.latitude, lng: initialLocation.longitude });
       setIsManualOverride(false);
+      sourceRef.current = 'initial';
       emitLocation(detailsRef.current);
       fetchLocationDetails(initialLocation.latitude, initialLocation.longitude);
     } else {
@@ -273,6 +283,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
       verifiedOnSite = distance <= onSiteThresholdMeters;
     }
     updatePin(hit.lat, hit.lon, 20, verifiedOnSite);
+    sourceRef.current = 'search';
     emitLocation(detailsRef.current);
     fetchLocationDetails(hit.lat, hit.lon);
   };
@@ -293,6 +304,7 @@ export const LocationPicker: React.FC<LocationPickerProps> = ({
     }
 
     updatePin(newLat, newLng, accuracy || 50, verifiedOnSite);
+    sourceRef.current = 'manual';
     emitLocation(detailsRef.current);
 
     // Refresh administrative details for the manually chosen pin

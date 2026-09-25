@@ -1,4 +1,20 @@
 services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: civicresolve_app
+    restart: unless-stopped
+    depends_on:
+      civic-postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://postgres:postgrespassword@civic-postgres:5432/civicresolve
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CIVRES_JWT_SECRET: ${CIVRES_JWT_SECRET:-civicresolve-dgp-demo-secret-change-in-prod}
+    ports:
+      - "3010:8080"
+
   civic-postgres:
     image: postgis/postgis:16-3.4
     container_name: civicresolve_postgres
@@ -8,10 +24,9 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgrespassword
     ports:
-      - "5432:5432"
+      - "5455:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d civicresolve"]
       interval: 5s
@@ -23,15 +38,15 @@ services:
     container_name: civicresolve_redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "6380:6379"
 
   civic-minio:
     image: minio/minio:latest
     container_name: civicresolve_storage
     restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9010:9000"
+      - "9011:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: miniopassword

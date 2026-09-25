@@ -17,25 +17,25 @@ export async function POST(
       return denied('Only citizens can upvote issues.');
     }
 
-    if (civicStore.hasUpvoted(user.userId, issueId)) {
+    if (await civicStore.hasUpvoted(user.userId, issueId)) {
       return NextResponse.json(
         { error: 'You have already upvoted this issue. (1 upvote per citizen per report)', code: 'ALREADY_UPVOTED' },
         { status: 409 }
       );
     }
 
-    const recorded = civicStore.recordUpvote(user.userId, issueId);
-    const updated = civicStore.upvoteIssue(issueId);
+    const recorded = await civicStore.recordUpvote(user.userId, issueId);
+    const updated = await civicStore.upvoteIssue(issueId);
 
     if (!recorded || !updated) {
       return NextResponse.json({ error: 'Issue not found.' }, { status: 404 });
     }
 
-    logAction(user, 'reports.upvote', `Upvoted issue ${issueId}.`, issueId);
+    await logAction(user, 'reports.upvote', `Upvoted issue ${issueId}.`, issueId);
 
     const ownerId = updated.citizenUserId;
     if (ownerId) {
-      notifyUser(ownerId, 'Your issue got an endorsement', `Someone upvoted your report — priority boosted.`, issueId);
+      await notifyUser(ownerId, 'Your issue got an endorsement', `Someone upvoted your report — priority boosted.`, issueId);
     }
 
     return NextResponse.json({

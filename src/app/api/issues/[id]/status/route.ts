@@ -42,7 +42,7 @@ export async function PATCH(
       return NextResponse.json({ error: `Invalid status: ${status}` }, { status: 400 });
     }
 
-    const current = civicStore.getIssueById(issueId);
+    const current = await civicStore.getIssueById(issueId);
     if (!current) {
       return NextResponse.json({ error: 'Issue not found.' }, { status: 404 });
     }
@@ -58,7 +58,7 @@ export async function PATCH(
       return denied('Forbidden: this ticket belongs to another department.');
     }
 
-    const updated = civicStore.updateIssueStatus(issueId, {
+    const updated = await civicStore.updateIssueStatus(issueId, {
       status,
       assignedWorkerName,
       assignedDepartment,
@@ -72,7 +72,7 @@ export async function PATCH(
     }
 
     const deptName = updated.assignedDepartment || current.departmentId || 'municipal department';
-    logAction(user, `reports.${status === 'in_progress' ? 'start' : status === 'resolved' ? 'resolve' : status === 'verified' ? 'verify' : status === 'assigned' ? 'assign' : status === 'rejected' ? 'reject' : 'status'}`, `Issue ${issueId} → ${status}`, issueId);
+    await logAction(user, `reports.${status === 'in_progress' ? 'start' : status === 'resolved' ? 'resolve' : status === 'verified' ? 'verify' : status === 'assigned' ? 'assign' : status === 'rejected' ? 'reject' : 'status'}`, `Issue ${issueId} → ${status}`, issueId);
 
     // Notify the reporting citizen so they can track their ticket live
     if (updated.citizenUserId) {
@@ -83,7 +83,7 @@ export async function PATCH(
         resolved: 'mark as RESOLVED by field staff. Proof photo attached.',
         rejected: 'marked as rejected after review.',
       };
-      notifyUser(
+      await notifyUser(
         updated.citizenUserId,
         `Ticket ${updated.id}`,
         `Your report is ${statusMsg[status] || `now ${status}.`}`,

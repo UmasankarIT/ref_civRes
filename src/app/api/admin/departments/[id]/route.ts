@@ -15,7 +15,7 @@ export async function PATCH(
   if (!user) return unauthorized('Sign in to manage departments.');
   if (!isRole(user, 'city_admin')) return denied('Only the city admin can manage departments.');
 
-  const dept = civicStore.getDepartmentById(params.id);
+  const dept = await civicStore.getDepartmentById(params.id);
   if (!dept) return NextResponse.json({ error: 'Department not found.' }, { status: 404 });
 
   const body = (await req.json()) as Partial<Department>;
@@ -29,8 +29,8 @@ export async function PATCH(
     categoryCodes: body.categoryCodes !== undefined ? body.categoryCodes : dept.categoryCodes,
   };
 
-  const saved = civicStore.upsertDepartment(merged);
-  logAction(user, 'departments.update', `${dept.disabled ? 'Disabled' : 'Updated'} department ${saved.name} (SLA ${saved.slaHours}h).`);
+  const saved = await civicStore.upsertDepartment(merged);
+  await logAction(user, 'departments.update', `${dept.disabled ? 'Disabled' : 'Updated'} department ${saved.name} (SLA ${saved.slaHours}h).`);
 
   return NextResponse.json({ department: saved, message: 'Department updated.' });
 }

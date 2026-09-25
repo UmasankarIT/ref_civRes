@@ -1,119 +1,65 @@
 import {
+  AppNotification,
+  AuditLogEntry,
   Category,
+  Department,
   Issue,
   IssueReport,
-  Department,
-  AppNotification,
   ProofOfWork,
-  AuditLogEntry,
 } from './types';
 import { calculatePriorityScore } from './scoring';
 import { DEFAULT_DEPARTMENTS } from './departments';
+import { INITIAL_CATEGORIES } from './categories';
+import { buildSeedIssues } from './seedIssues';
+import { CivicStore, IssueStatusUpdate, ReassignRequest } from './civicStore';
+import { PostgresStore } from './postgresStore';
 
-export const INITIAL_CATEGORIES: Category[] = [
-  {
-    id: 'cat-road-pothole',
-    code: 'ROAD_POTHOLE',
-    name: 'Pothole & Surface Damage',
-    description: 'Potholes, asphalt crumbling, and sharp pavement depressions',
-    baseSeverityWeight: 1.2,
-    defaultSlaHours: 48,
-    responsibleDepartment: 'Public Works & Roads Dept',
-    iconName: 'Construction',
-  },
-  {
-    id: 'cat-drainage-overflow',
-    code: 'DRAINAGE_OVERFLOW',
-    name: 'Drainage & Sewage Leak',
-    description: 'Open manholes, blocked storm gutters, and raw sewage overflow',
-    baseSeverityWeight: 1.4,
-    defaultSlaHours: 24,
-    responsibleDepartment: 'Drainage, Sewerage & Stormwater',
-    iconName: 'Droplets',
-  },
-  {
-    id: 'cat-garbage-dump',
-    code: 'GARBAGE_DUMP',
-    name: 'Garbage & Solid Waste Pile',
-    description: 'Illegal road dumps, overflowing community bins, toxic debris',
-    baseSeverityWeight: 1.0,
-    defaultSlaHours: 36,
-    responsibleDepartment: 'Solid Waste Management Cell',
-    iconName: 'Trash2',
-  },
-  {
-    id: 'cat-streetlight-outage',
-    code: 'STREETLIGHT_OUTAGE',
-    name: 'Broken Streetlight / Dark Spot',
-    description: 'Non-functional lamps, dangling cables, and hazardous dark zones',
-    baseSeverityWeight: 0.85,
-    defaultSlaHours: 72,
-    responsibleDepartment: 'Electrical & Street Lighting Cell',
-    iconName: 'Lightbulb',
-  },
-  {
-    id: 'cat-water-burst',
-    code: 'WATER_SUPPLY_BURST',
-    name: 'Clean Water Pipeline Burst',
-    description: 'High-pressure clean water line rupture flooding road corridors',
-    baseSeverityWeight: 1.5,
-    defaultSlaHours: 12,
-    responsibleDepartment: 'Water Supply & Sanitation',
-    iconName: 'Waves',
-  },
-  {
-    id: 'cat-others',
-    code: 'OTHERS',
-    name: 'Other Civic Issue',
-    description: 'Any other civic infrastructure problem not covered by the categories above',
-    baseSeverityWeight: 1.0,
-    defaultSlaHours: 72,
-    responsibleDepartment: 'Triage & Unassigned',
-    iconName: 'HelpCircle',
-  },
-];
+export { INITIAL_CATEGORIES } from './categories';
 
-// The in-memory store is intentionally empty on first load.
-// Citizen reports and municipal updates are added at runtime via the API.
-class CivicStore {
+// Volatile in-memory store — used when DATABASE_URL is not configured.
+// Behaviourally identical to the Postgres store; resets on restart by design.
+class MemoryStore implements CivicStore {
   private categories: Category[] = [...INITIAL_CATEGORIES];
   private issues: Issue[] = [];
   private reports: IssueReport[] = [];
   private departments: Department[] = DEFAULT_DEPARTMENTS.map((d) => ({ ...d }));
   private notifications: AppNotification[] = [];
   private auditLogs: AuditLogEntry[] = [];
-  private upvoteKeys = new Set<string>(); // `${userId}:${issueId}` — unique constraint
+  private upvoteKeys = new Set<string>();
   private proofOfWork: ProofOfWork[] = [];
 
-  getCategories(): Category[] {
+  constructor() {
+    this.issues = buildSeedIssues();
+  }
+
+  async getCategories(): Promise<Category[]> {
     return this.categories;
   }
 
-  getCategoryById(id: string): Category | undefined {
+  async getCategoryById(id: string): Promise<Category | undefined> {
     return this.categories.find((c) => c.id === id || c.code === id);
   }
 
-  getIssues(): Issue[] {
-    // Return sorted by priority score descending
+  async getIssues(): Promise<Issue[]> {
     return [...this.issues].sort((a, b) => b.priorityScore - a.priorityScore);
   }
 
-  getIssueById(id: string): Issue | undefined {
+  async getIssueById(id: string): Promise<Issue | undefined> {
     return this.issues.find((i) => i.id === id);
   }
 
-  addIssue(issue: Issue): Issue {
+  async addIssue(issue: Issue): Promise<Issue> {
     this.issues.unshift(issue);
     return issue;
   }
 
-  addReport(report: IssueReport): IssueReport {
+  async addReport(report: IssueReport): Promise<IssueReport> {
     this.reports.push(report);
     return report;
   }
 
-  incrementIssueReport(issueId: string, report: IssueReport): Issue | null {
-    const issue = this.getIssueById(issueId);
+  async incrementIssueReport(issueId: string, report: IssueReport): Promise<Issue | null> {
+    const issue = this.getIssueByIdSync(issueId);
     if (!issue) return null;
 
     issue.reportCount += 1;
@@ -133,8 +79,8 @@ class CivicStore {
     return issue;
   }
 
-  upvoteIssue(issueId: string): Issue | null {
-    const issue = this.getIssueById(issueId);
+  async upvoteIssue(issueId: string): Promise<Issue | null> {
+    const issue = this.getIssueByIdSync(issueId);
     if (!issue) return null;
 
     issue.communityUpvotes += 1;
@@ -152,11 +98,11 @@ class CivicStore {
   }
 
   // --- RBAC: upvote uniqueness (1 citizen = 1 upvote per report) ---
-  hasUpvoted(userId: string, issueId: string): boolean {
+  async hasUpvoted(userId: string, issueId: string): Promise<boolean> {
     return this.upvoteKeys.has(`${userId}:${issueId}`);
   }
 
-  recordUpvote(userId: string, issueId: string): boolean {
+  async recordUpvote(userId: string, issueId: string): Promise<boolean> {
     const key = `${userId}:${issueId}`;
     if (this.upvoteKeys.has(key)) return false;
     this.upvoteKeys.add(key);
@@ -164,11 +110,11 @@ class CivicStore {
   }
 
   // --- Departments (dynamic catalog; admin CRUD) ---
-  getDepartments(): Department[] {
+  async getDepartments(): Promise<Department[]> {
     return [...this.departments].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  getDepartmentById(id: string): Department | undefined {
+  async getDepartmentById(id: string): Promise<Department | undefined> {
     const found = this.departments.find(
       (d) => d.id === id || d.code.toLowerCase() === String(id).toLowerCase()
     );
@@ -176,7 +122,7 @@ class CivicStore {
     return DEFAULT_DEPARTMENTS.find((d) => d.id === id || d.code === id);
   }
 
-  upsertDepartment(dept: Department): Department {
+  async upsertDepartment(dept: Department): Promise<Department> {
     const idx = this.departments.findIndex((d) => d.id === dept.id);
     if (idx >= 0) {
       this.departments[idx] = dept;
@@ -187,25 +133,25 @@ class CivicStore {
   }
 
   // --- Scoped queries (department isolation at the data layer) ---
-  getIssuesForCitizen(userId: string): Issue[] {
-    return this.getIssues().filter((i) => i.citizenUserId === userId);
+  async getIssuesForCitizen(userId: string): Promise<Issue[]> {
+    return (await this.getIssues()).filter((i) => i.citizenUserId === userId);
   }
 
-  getIssuesForDepartment(departmentId: string): Issue[] {
-    return this.getIssues().filter(
+  async getIssuesForDepartment(departmentId: string): Promise<Issue[]> {
+    return (await this.getIssues()).filter(
       (i) => i.departmentId === departmentId && i.status !== 'merged' && i.status !== 'rejected'
     );
   }
 
-  getAssignableForDepartment(departmentId: string): Issue[] {
-    return this.getIssuesForDepartment(departmentId).filter(
+  async getAssignableForDepartment(departmentId: string): Promise<Issue[]> {
+    return (await this.getIssuesForDepartment(departmentId)).filter(
       (i) => i.status === 'assigned' || i.status === 'in_progress'
     );
   }
 
   // --- Proof of work ---
-  addProofOfWork(proof: ProofOfWork): Issue | null {
-    const issue = this.getIssueById(proof.issueId);
+  async addProofOfWork(proof: ProofOfWork): Promise<Issue | null> {
+    const issue = this.getIssueByIdSync(proof.issueId);
     if (!issue) return null;
     this.proofOfWork.push(proof);
     issue.proof = proof;
@@ -214,11 +160,11 @@ class CivicStore {
   }
 
   // --- Dispatch reassign requests ---
-  requestReassign(
+  async requestReassign(
     issueId: string,
-    req: { byDepartment: string; reason: string; at: string }
-  ): Issue | null {
-    const issue = this.getIssueById(issueId);
+    req: ReassignRequest
+  ): Promise<Issue | null> {
+    const issue = this.getIssueByIdSync(issueId);
     if (!issue) return null;
     issue.reassignRequest = req;
     issue.updatedAt = new Date().toISOString();
@@ -226,9 +172,9 @@ class CivicStore {
   }
 
   // --- Merger (MERGED_DUPLICATE) ---
-  mergeIssue(secondaryId: string, primaryId: string): boolean {
-    const secondary = this.getIssueById(secondaryId);
-    const primary = this.getIssueById(primaryId);
+  async mergeIssue(secondaryId: string, primaryId: string): Promise<boolean> {
+    const secondary = this.getIssueByIdSync(secondaryId);
+    const primary = this.getIssueByIdSync(primaryId);
     if (!secondary || !primary || secondaryId === primaryId) return false;
     secondary.status = 'merged';
     secondary.mergedIntoId = primaryId;
@@ -238,19 +184,11 @@ class CivicStore {
     return true;
   }
 
-  updateIssueStatus(
+  async updateIssueStatus(
     issueId: string,
-    params: {
-      status: Issue['status'];
-      assignedWorkerName?: string;
-      assignedDepartment?: string;
-      departmentId?: string;
-      resolutionNotes?: string;
-      resolutionProofUrl?: string;
-      jurisdictionCode?: string;
-    }
-  ): Issue | null {
-    const issue = this.getIssueById(issueId);
+    params: IssueStatusUpdate
+  ): Promise<Issue | null> {
+    const issue = this.getIssueByIdSync(issueId);
     if (!issue) return null;
 
     issue.status = params.status;
@@ -266,7 +204,7 @@ class CivicStore {
     }
 
     if (params.status === 'assigned') {
-      const dept = this.getDepartmentById(issue.departmentId || '');
+      const dept = await this.getDepartmentById(issue.departmentId || '');
       const slaHours = dept?.slaHours ?? issue.category.defaultSlaHours ?? 72;
       issue.slaDeadlineAt = new Date(Date.now() + slaHours * 3600_000).toISOString();
     }
@@ -280,33 +218,51 @@ class CivicStore {
   }
 
   // --- Notifications ---
-  pushNotification(n: AppNotification): void {
+  async pushNotification(n: AppNotification): Promise<void> {
     this.notifications.unshift(n);
     if (this.notifications.length > 100) this.notifications.pop();
   }
 
-  getNotificationsForUser(userId: string): AppNotification[] {
+  async getNotificationsForUser(userId: string): Promise<AppNotification[]> {
     return this.notifications.filter((n) => n.userId === userId);
   }
 
-  markNotificationsRead(userId: string): void {
+  async markNotificationsRead(userId: string): Promise<void> {
     this.notifications.forEach((n) => {
       if (n.userId === userId) n.read = true;
     });
   }
 
   // --- Audit log (append-only) ---
-  addAuditLog(entry: AuditLogEntry): void {
+  async addAuditLog(entry: AuditLogEntry): Promise<void> {
     this.auditLogs.unshift(entry);
     if (this.auditLogs.length > 200) this.auditLogs.pop();
   }
 
-  getAuditLogs(limit = 50): AuditLogEntry[] {
+  async getAuditLogs(limit = 50): Promise<AuditLogEntry[]> {
     return this.auditLogs.slice(0, limit);
+  }
+
+  async withTransaction<T>(fn: () => Promise<T>): Promise<T> {
+    return fn();
+  }
+
+  private getIssueByIdSync(id: string): Issue | undefined {
+    return this.issues.find((i) => i.id === id);
   }
 }
 
-// Global singleton instance across API routes
+// ---------------------------------------------------------------------------
+// Store factory — Postgres when DATABASE_URL is configured, in-memory fallback
+// when it isn't. Kept on globalThis so hot-reloads reuse the same pool/state.
+// ---------------------------------------------------------------------------
+function createStore(): CivicStore {
+  if (process.env.DATABASE_URL) {
+    return new PostgresStore();
+  }
+  return new MemoryStore();
+}
+
 const globalForStore = globalThis as unknown as { civicStore: CivicStore };
-export const civicStore = globalForStore.civicStore || new CivicStore();
+export const civicStore: CivicStore = globalForStore.civicStore || createStore();
 if (process.env.NODE_ENV !== 'production') globalForStore.civicStore = civicStore;

@@ -61,6 +61,7 @@ export const ReportModal: React.FC<ReportModalProps> = ({
     longitude: DEFAULT_LNG,
     accuracyMeters: 10,
     isOnSite: true,
+    source: null,
   });
   const [imageUrl, setImageUrl] = useState<string>('');
   const [exif, setExif] = useState<ExifMetadata>({ hasGps: false });
@@ -209,11 +210,38 @@ export const ReportModal: React.FC<ReportModalProps> = ({
           const type = mr.mimeType || 'audio/webm';
           const blob = new Blob(audioChunksRef.current, { type });
           const reader = new FileReader();
-          reader.onload = () => {
+          reader.onload = async () => {
+            const audioUrl = String(reader.result || '');
             setVoiceNote((prev) => ({
-              audioUrl: String(reader.result || ''),
+              audioUrl,
               transcript: prev?.transcript || notes.trim(),
             }));
+
+            // Let Gemini transcribe the clip and translate it for the department
+            // queue. The browser-side transcript stays as the fallback.
+            try {
+              const res = await fetch('/api/voice/transcribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  audioData: audioUrl,
+                  languageHint: activeLangMeta.name,
+                }),
+              });
+              if (!res.ok) return;
+              const data = await res.json();
+              if (data?.engine !== 'gemini' || !data?.transcript) return;
+
+              const parts = [data.transcript];
+              if (data.englishTranscript && data.englishTranscript !== data.transcript) {
+                parts.push(`English: ${data.englishTranscript}`);
+              }
+              const combined = parts.join('\n');
+              setVoiceNote((prev) => (prev ? { ...prev, transcript: combined } : prev));
+              setNotes((prev) => (prev.trim() ? prev : data.transcript));
+            } catch {
+              // Transcription is best-effort — keep the local transcript.
+            }
           };
           reader.readAsDataURL(blob);
           stream.getTracks().forEach((t) => t.stop());
@@ -240,6 +268,13 @@ export const ReportModal: React.FC<ReportModalProps> = ({
 
     if (!imageUrl) {
       setErrorMessage('Please capture or select an image evidence.');
+      return;
+    }
+
+    if (!location.source) {
+      setErrorMessage(
+        'Location not confirmed yet. Allow GPS, search your address, or tap the map to drop a pin — this keeps the civic data accurate.'
+      );
       return;
     }
 

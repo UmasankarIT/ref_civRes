@@ -12,8 +12,8 @@ export async function GET(req: NextRequest) {
   if (!user) return unauthorized('Sign in to view analytics.');
   if (!isRole(user, 'city_admin')) return denied('Only the city admin can view platform analytics.');
 
-  const issues = civicStore.getIssues();
-  const departments = civicStore.getDepartments();
+  const issues = await civicStore.getIssues();
+  const departments = await civicStore.getDepartments();
   const now = new Date();
 
   const byStatus: Record<string, number> = {};
@@ -84,6 +84,6 @@ export async function GET(req: NextRequest) {
     byCategory,
     byDepartment,
     slaBreachedIssues,
-    recentAudit: civicStore.getAuditLogs(12),
+    recentAudit: await civicStore.getAuditLogs(12),
   });
 }
